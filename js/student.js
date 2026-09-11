@@ -3,6 +3,7 @@
 // ============================================================
 import {
   db, ready, collection, getDocs, addDoc, serverTimestamp,
+  onSnapshot, query, where,
   loadCatalog, addCatalogItem, seedCatalogIfEmpty, fmtTime,
 } from "./db.js";
 
@@ -15,6 +16,7 @@ let chosenKey = null;
 let chosenEq = {};
 let wantKey = false;   // 是否要借鑰匙
 let wantEq = false;    // 是否要借設備
+let borrowedKeys = new Set();   // 目前借出中（未歸還）的鑰匙
 
 init();
 async function init() {
@@ -23,6 +25,7 @@ async function init() {
     await seedCatalogIfEmpty();
     await loadStudents();
     catalog = await loadCatalog();
+    watchBorrowedKeys();     // 即時追蹤哪些鑰匙已借出
     renderKeys();
     renderEquipment();
     $("loading").classList.add("hidden");
@@ -99,13 +102,28 @@ function toggleWantEq() {
   if (!wantEq) { chosenEq = {}; renderEquipment(); }
 }
 
+// 即時追蹤借出中（未歸還）的鑰匙，已借出的就不能再借
+function watchBorrowedKeys() {
+  const q = query(collection(db, "records"), where("status", "==", "borrowed"));
+  onSnapshot(q, (snap) => {
+    borrowedKeys = new Set();
+    snap.forEach((d) => { const k = d.data().key; if (k) borrowedKeys.add(k); });
+    if (chosenKey && borrowedKeys.has(chosenKey)) chosenKey = null; // 剛好被別人借走 → 取消選取
+    renderKeys();
+  });
+}
+
 // ── 鑰匙（單選晶片）────────────────────────────────────────
 function renderKeys() {
   const box = $("keyChips");
-  box.innerHTML = catalog.keys.map(
-    (k) => `<button type="button" class="chip ${chosenKey === k ? "on" : ""}" data-key="${esc(k)}">${esc(k)}</button>`
-  ).join("");
-  [...box.querySelectorAll(".chip")].forEach((el) => {
+  box.innerHTML = catalog.keys.map((k) => {
+    if (borrowedKeys.has(k)) {
+      // 已借出：顯示為停用狀態，不可點選
+      return `<span class="chip" style="opacity:.45;cursor:not-allowed;border-style:dashed" title="已借出，暫不可借">${esc(k)}・借出中</span>`;
+    }
+    return `<button type="button" class="chip ${chosenKey === k ? "on" : ""}" data-key="${esc(k)}">${esc(k)}</button>`;
+  }).join("");
+  [...box.querySelectorAll("button.chip")].forEach((el) => {
     el.addEventListener("click", () => {
       const k = el.dataset.key;
       chosenKey = (chosenKey === k) ? null : k;
@@ -198,6 +216,21 @@ async function submit() {
   const btn = $("submitBtn");
   btn.disabled = true; btn.textContent = "送出中…";
   try {
+    // 送出前再確認一次鑰匙沒有被別人搶先借走
+    if (wantKey && chosenKey) {
+      const snap = await getDocs(query(collection(db, "records"), where("status", "==", "borrowed")));
+      const taken = new Set();
+      snap.forEach((d) => { const k = d.data().key; if (k) taken.add(k); });
+      if (taken.has(chosenKey)) {
+        const takenName = chosenKey;
+        borrowedKeys = taken;
+        chosenKey = null;
+        renderKeys();
+        show(`鑰匙「${esc(takenName)}」剛剛已被借走，請改選其他教室。`);
+        btn.disabled = false; btn.textContent = "送出借用登記";
+        return;
+      }
+    }
     await addDoc(collection(db, "records"), {
       studentId: selected.studentId,
       name: selected.name,
