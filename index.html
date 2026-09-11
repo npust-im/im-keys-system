@@ -12,10 +12,20 @@
 <body>
   <div class="wrap">
 
-    <header class="center mb16" style="padding-top:8px">
-      <span class="keytag">教室借用</span>
-      <h1 style="font-size:26px;margin-top:16px">鑰匙・設備借用登記</h1>
+    <header class="site-head">
+      <img src="logo.svg" alt="工業管理系" class="site-logo" />
+      <div class="brandbar"></div>
+      <h1 style="font-size:24px;margin-top:16px">鑰匙・設備借用登記</h1>
     </header>
+
+    <!-- 步驟圓點 -->
+    <div id="stepdots" class="stepdots hidden">
+      <span class="sd active" data-step="1"><span class="dot2">1</span><span class="lbl2">借用人</span></span>
+      <span class="bar2"></span>
+      <span class="sd" data-step="2"><span class="dot2">2</span><span class="lbl2">借用項目</span></span>
+      <span class="bar2"></span>
+      <span class="sd" data-step="3"><span class="dot2">3</span><span class="lbl2">送出</span></span>
+    </div>
 
     <div id="loading" class="card center">
       <p>資料載入中…</p>
@@ -70,7 +80,7 @@
         <p id="eqMsg" class="hint"></p>
       </section>
 
-      <section class="card">
+      <section class="card sticky-submit">
         <div class="row-between mb16">
           <span class="lbl" style="margin:0">借出時間</span>
           <span id="clock" class="mono strong"></span>
@@ -82,8 +92,10 @@
 
     <div id="done" class="hidden">
       <section class="card center">
-        <span class="keytag">登記完成</span>
-        <h2 style="font-size:22px;margin-top:16px">已送出借用登記</h2>
+        <div class="checkcircle">
+          <svg viewBox="0 0 24 24" fill="none" stroke="var(--returned)" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>
+        </div>
+        <h2 style="font-size:22px;margin-top:8px">已送出借用登記</h2>
         <div id="doneSummary" class="msg msg-ok mt16" style="text-align:left"></div>
         <p class="small">請到系辦領取鑰匙 / 設備。歸還時由系辦工讀生於後台確認。</p>
         <button id="againBtn" class="btn btn-ghost mt16">再登記一筆</button>

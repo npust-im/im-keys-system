@@ -19,12 +19,12 @@
     .board .cell .ck { font-weight:700; }
     .board .cell .cs { font-size:12px; }
     .board .cell.free { border-color:var(--returned); color:var(--returned); }
-    .board .cell.busy { border-color:var(--brass); background:var(--brass-tint); color:var(--brass); }
+    .board .cell.busy { border-color:var(--primary); background:var(--primary-tint); color:var(--primary); }
 
     /* 清單拖曳排序 */
     .list-item.sortable .drag { cursor:grab; color:var(--ink-soft); font-size:18px; line-height:1; user-select:none; padding:0 4px 0 0; }
     .list-item.sortable .drag:active { cursor:grabbing; }
-    .list-item.dragging { opacity:.5; border-color:var(--brass); border-style:dashed; }
+    .list-item.dragging { opacity:.5; border-color:var(--primary); border-style:dashed; }
     .list-item .maxInput { border:1.5px solid var(--line); border-radius:6px; }
     .list-item .maxInput:focus { outline:none; border-color:var(--steel); }
 
@@ -41,8 +41,11 @@
 
   <div id="gate" class="modal-bg">
     <div class="modal">
-      <span class="keytag">後台</span>
-      <h3 style="margin-top:14px">系辦工讀生登入</h3>
+      <div class="center" style="margin-bottom:14px">
+        <img src="logo.svg" alt="工業管理系" class="site-logo" style="width:60px;height:60px" />
+        <div class="brandbar" style="width:110px"></div>
+      </div>
+      <h3 style="text-align:center">系辦工讀生登入</h3>
       <div id="gateMsg"></div>
       <label class="field">
         <span class="lbl">後台密碼</span>
@@ -55,7 +58,7 @@
 
   <div id="app" class="hidden">
     <div class="topbar">
-      <span class="brand"><span class="dot"></span>教室借還・後台</span>
+      <span class="brand"><img src="logo.svg" class="site-logo sm" alt="工管系" />教室借還・後台</span>
       <span class="spread"></span>
       <a href="index.html">學生借用頁</a>
       <a href="qr.html">QR code</a>
@@ -151,7 +154,7 @@
           <p class="hint mb16">Excel 第一列需包含欄位：<b>學號</b>、<b>姓名</b>、<b>身分證後3碼</b>、<b>班級</b>（班級可留空）。匯入後會建立一個新群組。</p>
           <div id="drop" class="drop">
             <div class="big">拖曳 Excel 檔到這裡</div>
-            <div>或 <label style="color:var(--brass);cursor:pointer;text-decoration:underline">點此選擇檔案
+            <div>或 <label style="color:var(--primary);cursor:pointer;text-decoration:underline">點此選擇檔案
               <input id="fileInput" type="file" accept=".xlsx,.xls" hidden /></label></div>
           </div>
           <div id="importMsg" class="mt16"></div>

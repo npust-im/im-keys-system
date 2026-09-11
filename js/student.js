@@ -31,8 +31,10 @@ async function init() {
     renderEquipment();
     $("loading").classList.add("hidden");
     $("form").classList.remove("hidden");
+    $("stepdots").classList.remove("hidden");
     startClock();
     bindEvents();
+    updateSteps();
   } catch (err) {
     $("loading").innerHTML =
       `<p class="msg msg-err">連線失敗，請稍後再試，或通知系辦。<br><span class="small">${err.message}</span></p>`;
@@ -87,6 +89,7 @@ function pick(s) {
   $("sname").value = s.name;
   $("suggest").classList.add("hidden");
   $("sid3").focus();
+  updateSteps();
 }
 
 // ── 借用項目開關 ─────────────────────────────────────────────
@@ -95,12 +98,14 @@ function toggleWantKey() {
   $("wantKey").classList.toggle("on", wantKey);
   $("keySection").classList.toggle("hidden", !wantKey);
   if (!wantKey) { chosenKey = null; renderKeys(); }
+  updateSteps();
 }
 function toggleWantEq() {
   wantEq = !wantEq;
   $("wantEq").classList.toggle("on", wantEq);
   $("eqSection").classList.toggle("hidden", !wantEq);
   if (!wantEq) { chosenEq = {}; renderEquipment(); }
+  updateSteps();
 }
 
 // 即時追蹤借出中（未歸還）的鑰匙與設備數量，已滿的就不能再借
@@ -146,6 +151,7 @@ function renderKeys() {
       renderKeys();
     });
   });
+  updateSteps();
 }
 
 // ── 設備（複選 + 數量，依剩餘量限制）───────────────────────
@@ -210,6 +216,7 @@ function renderEquipment() {
     });
     qtyInput.addEventListener("input", () => { chosenEq[name] = clamp(qtyInput.value); });
   });
+  updateSteps();
 }
 
 // ── 新增鑰匙 / 設備 ──────────────────────────────────────────
@@ -331,11 +338,13 @@ function bindEvents() {
   $("sid").addEventListener("input", () => {
     selected = null; $("sname").value = "";
     runSearch();
+    updateSteps();
   });
   $("sid").addEventListener("focus", runSearch);
   $("sid").addEventListener("blur", () => setTimeout(() => $("suggest").classList.add("hidden"), 150));
   $("sid3").addEventListener("input", () => {
     $("sid3").value = $("sid3").value.replace(/\D/g, "").slice(0, 3);
+    updateSteps();
   });
 
   $("wantKey").addEventListener("click", toggleWantKey);
@@ -348,6 +357,20 @@ function bindEvents() {
 
   $("submitBtn").addEventListener("click", submit);
   $("againBtn").addEventListener("click", () => location.reload());
+}
+
+function updateSteps() {
+  const s1 = !!selected && /^\d{3}$/.test($("sid3").value.trim());
+  const hasItem = (wantKey && !!chosenKey) || (wantEq && Object.keys(chosenEq).length > 0);
+  const set = (step, cls) => {
+    const el = document.querySelector(`.sd[data-step="${step}"]`);
+    if (!el) return;
+    el.classList.remove("active", "done");
+    if (cls) el.classList.add(cls);
+  };
+  set(1, s1 ? "done" : "active");
+  set(2, hasItem ? "done" : (s1 ? "active" : ""));
+  set(3, hasItem ? "active" : "");
 }
 
 function startClock() {
