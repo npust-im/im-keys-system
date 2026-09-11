@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>教室鑰匙・設備借用</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@500;700&family=Noto+Sans+TC:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="css/style.css" />
+</head>
+<body>
+  <div class="wrap">
+
+    <!-- 頁首：鑰匙牌母題 -->
+    <header class="center mb16" style="padding-top:8px">
+      <span class="keytag">教室借用</span>
+      <h1 style="font-size:26px;margin-top:16px">鑰匙・設備借用登記</h1>
+      <p class="small mt8">請依序輸入學號、驗證身分，再選擇要借的鑰匙與設備。</p>
+    </header>
+
+    <!-- 載入中 -->
+    <div id="loading" class="card center">
+      <p>資料載入中…</p>
+    </div>
+
+    <!-- 借用表單 -->
+    <div id="form" class="hidden">
+
+      <!-- 步驟 1：身分 -->
+      <section class="card">
+        <h2 style="font-size:18px" class="mb16">1. 借用人</h2>
+
+        <label class="field">
+          <span class="lbl">學號（可輸入部分數字快速搜尋）</span>
+          <div class="combo">
+            <input id="sid" type="search" inputmode="numeric" autocomplete="off"
+                   placeholder="例如：輸入 4109 會列出符合的學號" />
+            <div id="suggest" class="suggest hidden"></div>
+          </div>
+        </label>
+
+        <label class="field">
+          <span class="lbl">姓名（選擇學號後自動帶入）</span>
+          <input id="sname" type="text" disabled placeholder="—" />
+        </label>
+
+        <label class="field" style="margin-bottom:0">
+          <span class="lbl">身分證後 3 碼（驗證用）</span>
+          <input id="sid3" type="text" inputmode="numeric" maxlength="3" autocomplete="off"
+                 placeholder="輸入 3 位數字" />
+        </label>
+      </section>
+
+      <!-- 步驟 2：鑰匙 -->
+      <section class="card">
+        <div class="row-between mb16">
+          <h2 style="font-size:18px">2. 借用鑰匙</h2>
+          <span class="small">單選・數量固定 1</span>
+        </div>
+        <div id="keyChips" class="chips"></div>
+
+        <div class="row mt16">
+          <input id="newKey" type="text" placeholder="找不到教室？在此新增（例：CM520）" />
+          <button id="addKeyBtn" class="btn btn-ghost btn-sm" style="white-space:nowrap">新增教室</button>
+        </div>
+        <p id="keyMsg" class="hint"></p>
+      </section>
+
+      <!-- 步驟 3：設備 -->
+      <section class="card">
+        <div class="row-between mb16">
+          <h2 style="font-size:18px">3. 借用設備</h2>
+          <span class="small">可複選・可調數量</span>
+        </div>
+        <div id="eqList"></div>
+
+        <div class="row mt16">
+          <input id="newEq" type="text" placeholder="找不到設備？在此新增（例：白板筆）" />
+          <button id="addEqBtn" class="btn btn-ghost btn-sm" style="white-space:nowrap">新增設備</button>
+        </div>
+        <p id="eqMsg" class="hint"></p>
+      </section>
+
+      <!-- 步驟 4：送出 -->
+      <section class="card">
+        <div class="row-between mb16">
+          <span class="lbl" style="margin:0">借出時間</span>
+          <span id="clock" class="mono strong"></span>
+        </div>
+        <div id="submitMsg"></div>
+        <button id="submitBtn" class="btn btn-brass btn-block">送出借用登記</button>
+      </section>
+    </div>
+
+    <!-- 送出成功畫面 -->
+    <div id="done" class="hidden">
+      <section class="card center">
+        <span class="keytag">登記完成</span>
+        <h2 style="font-size:22px;margin-top:16px">已送出借用登記</h2>
+        <div id="doneSummary" class="msg msg-ok mt16" style="text-align:left"></div>
+        <p class="small">請到系辦領取鑰匙 / 設備。歸還時由系辦工讀生於後台確認。</p>
+        <button id="againBtn" class="btn btn-ghost mt16">再登記一筆</button>
+      </section>
+    </div>
+
+    <p class="center small mt24">系辦工讀生請至 <a href="admin.html">後台管理</a></p>
+  </div>
+
+  <script type="module" src="js/student.js"></script>
+</body>
+</html>

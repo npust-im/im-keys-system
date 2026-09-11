@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>借用頁 QR code</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@500;700&family=Noto+Sans+TC:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="css/style.css" />
+  <script src="https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js"></script>
+  <style>
+    #qrbox { display:inline-block; padding:20px; background:#fff; border:1px solid var(--line); border-radius:var(--r-lg); }
+    @media print {
+      .noprint { display:none !important; }
+      body { background:#fff; }
+      #printCard { border:none; box-shadow:none; }
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap center">
+    <header class="mb16" style="padding-top:8px">
+      <span class="keytag">掃碼借用</span>
+      <h1 style="font-size:24px;margin-top:16px">借用頁 QR code</h1>
+    </header>
+
+    <div class="card noprint" style="text-align:left">
+      <label class="field" style="margin-bottom:8px">
+        <span class="lbl">前台網址（可修改）</span>
+        <input id="url" type="text" />
+      </label>
+      <p class="hint mb16">預設讀取 config.js 的 SITE_URL。改網址後按「更新」重新產生。這個 QR 固定不變，印一次即可重複使用。</p>
+      <div class="row">
+        <button id="gen" class="btn btn-brass">更新 QR code</button>
+        <button id="print" class="btn btn-ghost">列印 / 存成 PDF</button>
+      </div>
+    </div>
+
+    <div id="printCard" class="card mt16">
+      <h2 style="font-size:20px" class="mb16">教室鑰匙・設備借用</h2>
+      <div id="qrbox"></div>
+      <p class="small mt16">掃描 QR code 進入借用登記</p>
+      <p id="urlText" class="mono small" style="word-break:break-all;color:var(--ink-soft)"></p>
+    </div>
+
+    <p class="center small mt24 noprint"><a href="admin.html">← 回後台</a></p>
+  </div>
+
+  <script type="module">
+    import { SITE_URL } from "./js/config.js";
+    const $ = (id) => document.getElementById(id);
+    let qr;
+    function draw(text) {
+      $("qrbox").innerHTML = "";
+      qr = new QRCode($("qrbox"), { text, width: 256, height: 256, correctLevel: QRCode.CorrectLevel.M });
+      $("urlText").textContent = text;
+    }
+    $("url").value = SITE_URL;
+    draw(SITE_URL);
+    $("gen").addEventListener("click", () => draw($("url").value.trim()));
+    $("print").addEventListener("click", () => window.print());
+  </script>
+</body>
+</html>
