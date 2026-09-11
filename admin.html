@@ -8,12 +8,22 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@500;700&family=Noto+Sans+TC:wght@400;500;600;700&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="style.css" />
-  <!-- Excel 解析（在使用者瀏覽器執行；GitHub Pages 不需安裝任何東西） -->
   <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
+  <style>
+    /* 借用狀況總覽：鑰匙狀態格 */
+    .board { display:flex; flex-wrap:wrap; gap:8px; }
+    .board .cell {
+      display:inline-flex; flex-direction:column; gap:2px;
+      border:1.5px solid var(--line); border-radius:9px; padding:9px 14px; min-width:96px;
+    }
+    .board .cell .ck { font-weight:700; }
+    .board .cell .cs { font-size:12px; }
+    .board .cell.free { border-color:var(--returned); color:var(--returned); }
+    .board .cell.busy { border-color:var(--brass); background:var(--brass-tint); color:var(--brass); }
+  </style>
 </head>
 <body>
 
-  <!-- 密碼閘門 -->
   <div id="gate" class="modal-bg">
     <div class="modal">
       <span class="keytag">後台</span>
@@ -28,7 +38,6 @@
     </div>
   </div>
 
-  <!-- 後台主體 -->
   <div id="app" class="hidden">
     <div class="topbar">
       <span class="brand"><span class="dot"></span>教室借還・後台</span>
@@ -40,19 +49,22 @@
 
     <div class="wrap-wide">
       <div class="tabs">
-        <button class="tab on" data-tab="records">借還總表</button>
+        <button class="tab on" data-tab="records">今日借還總表</button>
+        <button class="tab" data-tab="overview">借用狀況總覽</button>
         <button class="tab" data-tab="groups">學生群組</button>
         <button class="tab" data-tab="catalog">鑰匙・設備清單</button>
         <button class="tab" data-tab="staff">工讀生名單</button>
       </div>
 
-      <!-- ============ 分頁：借還總表 ============ -->
+      <!-- ============ 今日借還總表 ============ -->
       <section id="tab-records">
         <div class="stat-row">
-          <div class="stat"><div class="n" id="statOut">0</div><div class="k">未歸還</div></div>
-          <div class="stat"><div class="n" id="statReturned">0</div><div class="k">已歸還</div></div>
-          <div class="stat"><div class="n" id="statTotal">0</div><div class="k">總筆數</div></div>
+          <div class="stat"><div class="n" id="statOut">0</div><div class="k">今日未歸還</div></div>
+          <div class="stat"><div class="n" id="statReturned">0</div><div class="k">今日已歸還</div></div>
+          <div class="stat"><div class="n" id="statTotal">0</div><div class="k">今日總筆數</div></div>
         </div>
+
+        <div class="msg msg-info">只顯示<b>今日</b>的借還紀錄，跨過午夜會自動歸零。跨日仍未歸還的項目請到「借用狀況總覽」處理。</div>
 
         <div class="row-between mb16">
           <div class="chips">
@@ -67,29 +79,60 @@
           <table class="ledger">
             <thead>
               <tr>
-                <th>學號</th>
-                <th>姓名</th>
-                <th>身份驗證</th>
-                <th>借出內容</th>
-                <th>借出時間</th>
-                <th>確認歸還</th>
-                <th>歸還時間</th>
+                <th>學號</th><th>姓名</th><th>身份驗證</th><th>借出內容</th>
+                <th>借出時間</th><th>確認歸還</th><th>歸還時間</th>
               </tr>
             </thead>
             <tbody id="recBody"></tbody>
           </table>
         </div>
-        <p id="recEmpty" class="center small mt24 hidden">目前沒有符合的紀錄。</p>
+        <p id="recEmpty" class="center small mt24 hidden">今日目前沒有符合的紀錄。</p>
       </section>
 
-      <!-- ============ 分頁：學生群組 ============ -->
+      <!-- ============ 借用狀況總覽 ============ -->
+      <section id="tab-overview" class="hidden">
+        <div class="stat-row">
+          <div class="stat"><div class="n" id="ovKeysOut">0</div><div class="k">鑰匙借出中</div></div>
+          <div class="stat"><div class="n" id="ovKeysFree">0</div><div class="k">鑰匙可借用</div></div>
+          <div class="stat"><div class="n" id="ovEqOut">0</div><div class="k">設備借出中（件）</div></div>
+        </div>
+
+        <div class="card">
+          <h2 style="font-size:18px" class="mb16">🔑 鑰匙狀態</h2>
+          <div id="keyBoard" class="board"></div>
+          <p class="hint mt16">綠色＝可借用；金色＝借出中（顯示借用人學號）。</p>
+        </div>
+
+        <div class="card">
+          <h2 style="font-size:18px" class="mb16">設備借出中統計</h2>
+          <div id="eqOutList"></div>
+        </div>
+
+        <div class="card">
+          <div class="row-between mb16">
+            <h2 style="font-size:18px">目前借出中（未歸還・含跨日）</h2>
+            <input id="ovSearch" type="search" placeholder="搜尋學號 / 姓名" style="max-width:220px" />
+          </div>
+          <div class="table-scroll">
+            <table class="ledger">
+              <thead>
+                <tr>
+                  <th>學號</th><th>姓名</th><th>借出內容</th>
+                  <th>借出時間</th><th>已借天數</th><th>確認歸還</th>
+                </tr>
+              </thead>
+              <tbody id="ovBody"></tbody>
+            </table>
+          </div>
+          <p id="ovEmpty" class="center small mt24 hidden">目前沒有未歸還的紀錄。</p>
+        </div>
+      </section>
+
+      <!-- ============ 學生群組 ============ -->
       <section id="tab-groups" class="hidden">
         <div class="card">
           <h2 style="font-size:18px" class="mb16">匯入學生資料（Excel）</h2>
-          <p class="hint mb16">
-            Excel 第一列需包含欄位：<b>學號</b>、<b>姓名</b>、<b>身分證後3碼</b>、<b>班級</b>（班級可留空）。
-            匯入後會建立一個新群組。
-          </p>
+          <p class="hint mb16">Excel 第一列需包含欄位：<b>學號</b>、<b>姓名</b>、<b>身分證後3碼</b>、<b>班級</b>（班級可留空）。匯入後會建立一個新群組。</p>
           <div id="drop" class="drop">
             <div class="big">拖曳 Excel 檔到這裡</div>
             <div>或 <label style="color:var(--brass);cursor:pointer;text-decoration:underline">點此選擇檔案
@@ -110,28 +153,17 @@
           <h2 style="font-size:18px" class="mb16">手動新增學生到群組</h2>
           <div id="manualMsg"></div>
           <div class="row" style="flex-wrap:wrap;gap:12px">
-            <label class="field" style="flex:1;min-width:130px;margin:0">
-              <span class="lbl">學號</span><input id="mSid" type="text" />
-            </label>
-            <label class="field" style="flex:1;min-width:130px;margin:0">
-              <span class="lbl">姓名</span><input id="mName" type="text" />
-            </label>
-            <label class="field" style="flex:1;min-width:110px;margin:0">
-              <span class="lbl">身分證後3碼</span><input id="mId3" type="text" maxlength="3" inputmode="numeric" />
-            </label>
-            <label class="field" style="flex:1;min-width:130px;margin:0">
-              <span class="lbl">班級（可空）</span><input id="mClass" type="text" />
-            </label>
-            <label class="field" style="flex:1;min-width:150px;margin:0">
-              <span class="lbl">加入群組</span>
-              <select id="mGroup"></select>
-            </label>
+            <label class="field" style="flex:1;min-width:130px;margin:0"><span class="lbl">學號</span><input id="mSid" type="text" /></label>
+            <label class="field" style="flex:1;min-width:130px;margin:0"><span class="lbl">姓名</span><input id="mName" type="text" /></label>
+            <label class="field" style="flex:1;min-width:110px;margin:0"><span class="lbl">身分證後3碼</span><input id="mId3" type="text" maxlength="3" inputmode="numeric" /></label>
+            <label class="field" style="flex:1;min-width:130px;margin:0"><span class="lbl">班級（可空）</span><input id="mClass" type="text" /></label>
+            <label class="field" style="flex:1;min-width:150px;margin:0"><span class="lbl">加入群組</span><select id="mGroup"></select></label>
             <button id="mAddBtn" class="btn btn-steel" style="align-self:flex-end">新增</button>
           </div>
         </div>
       </section>
 
-      <!-- ============ 分頁：鑰匙・設備清單 ============ -->
+      <!-- ============ 鑰匙・設備清單 ============ -->
       <section id="tab-catalog" class="hidden">
         <div class="card">
           <h2 style="font-size:18px" class="mb16">🔑 鑰匙（教室）清單</h2>
@@ -151,11 +183,11 @@
         </div>
       </section>
 
-      <!-- ============ 分頁：工讀生名單 ============ -->
+      <!-- ============ 工讀生名單 ============ -->
       <section id="tab-staff" class="hidden">
         <div class="card">
           <h2 style="font-size:18px" class="mb16">工讀生 / 系辦人員名單</h2>
-          <p class="hint mb16">這些名字會出現在借還總表的「確認歸還」下拉選單，供選擇是哪位人員確認歸還。</p>
+          <p class="hint mb16">這些名字會出現在「確認歸還」下拉選單，供選擇是哪位人員確認歸還。</p>
           <div class="row mb16">
             <input id="addStaffInput" type="text" placeholder="輸入姓名" />
             <button id="addStaffBtn" class="btn" style="white-space:nowrap">新增</button>

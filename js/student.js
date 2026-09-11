@@ -8,18 +8,19 @@ import {
 
 const $ = (id) => document.getElementById(id);
 
-let students = [];          // 所有學生的比對索引
-let selected = null;        // 已選定的學生
+let students = [];
+let selected = null;
 let catalog = { keys: [], equipment: [] };
-let chosenKey = null;       // 選中的鑰匙（單選，可為 null）
-let chosenEq = {};          // { 設備名稱: 數量 }
+let chosenKey = null;
+let chosenEq = {};
+let wantKey = false;   // 是否要借鑰匙
+let wantEq = false;    // 是否要借設備
 
-// ── 初始化 ───────────────────────────────────────────────────
 init();
 async function init() {
   try {
     await ready;
-    await seedCatalogIfEmpty();     // 第一次使用自動建立預設清單
+    await seedCatalogIfEmpty();
     await loadStudents();
     catalog = await loadCatalog();
     renderKeys();
@@ -34,7 +35,6 @@ async function init() {
   }
 }
 
-// 把所有群組文件裡的學生攤平成一個比對索引
 async function loadStudents() {
   const snap = await getDocs(collection(db, "groups"));
   students = [];
@@ -53,18 +53,13 @@ async function loadStudents() {
 }
 
 // ── 學號模糊比對 ─────────────────────────────────────────────
-let activeIdx = -1;
 function runSearch() {
   const q = $("sid").value.trim().toLowerCase();
   const box = $("suggest");
   if (!q) { box.classList.add("hidden"); return; }
-
-  // 學號包含輸入字串，或姓名包含
   const hits = students.filter(
     (s) => s.studentId.toLowerCase().includes(q) || s.name.toLowerCase().includes(q)
   ).slice(0, 8);
-
-  activeIdx = -1;
   if (hits.length === 0) {
     box.innerHTML = `<div class="empty">查無符合的學號，請確認或洽系辦</div>`;
     box.classList.remove("hidden");
@@ -77,11 +72,9 @@ function runSearch() {
       <span class="scl">${esc(s.className || s.groupName)}</span>
     </div>`).join("");
   box.classList.remove("hidden");
-
   [...box.querySelectorAll(".item")].forEach((el, i) => {
     el.addEventListener("mousedown", (e) => { e.preventDefault(); pick(hits[i]); });
   });
-  box._hits = hits;
 }
 
 function pick(s) {
@@ -90,6 +83,20 @@ function pick(s) {
   $("sname").value = s.name;
   $("suggest").classList.add("hidden");
   $("sid3").focus();
+}
+
+// ── 借用項目開關 ─────────────────────────────────────────────
+function toggleWantKey() {
+  wantKey = !wantKey;
+  $("wantKey").classList.toggle("on", wantKey);
+  $("keySection").classList.toggle("hidden", !wantKey);
+  if (!wantKey) { chosenKey = null; renderKeys(); }
+}
+function toggleWantEq() {
+  wantEq = !wantEq;
+  $("wantEq").classList.toggle("on", wantEq);
+  $("eqSection").classList.toggle("hidden", !wantEq);
+  if (!wantEq) { chosenEq = {}; renderEquipment(); }
 }
 
 // ── 鑰匙（單選晶片）────────────────────────────────────────
@@ -101,7 +108,7 @@ function renderKeys() {
   [...box.querySelectorAll(".chip")].forEach((el) => {
     el.addEventListener("click", () => {
       const k = el.dataset.key;
-      chosenKey = (chosenKey === k) ? null : k;   // 再點一次取消
+      chosenKey = (chosenKey === k) ? null : k;
       renderKeys();
     });
   });
@@ -131,19 +138,16 @@ function renderEquipment() {
     const name = row.dataset.eq;
     const cb = row.querySelector('input[type=checkbox]');
     const qtyInput = row.querySelector(".qty");
-
     cb.addEventListener("change", () => {
       if (cb.checked) chosenEq[name] = parseInt(qtyInput.value) || 1;
       else delete chosenEq[name];
       renderEquipment();
     });
     row.querySelector('[data-act=inc]').addEventListener("click", () => {
-      const v = (parseInt(qtyInput.value) || 0) + 1;
-      chosenEq[name] = v; renderEquipment();
+      chosenEq[name] = (parseInt(qtyInput.value) || 0) + 1; renderEquipment();
     });
     row.querySelector('[data-act=dec]').addEventListener("click", () => {
-      const v = Math.max(1, (parseInt(qtyInput.value) || 1) - 1);
-      chosenEq[name] = v; renderEquipment();
+      chosenEq[name] = Math.max(1, (parseInt(qtyInput.value) || 1) - 1); renderEquipment();
     });
     qtyInput.addEventListener("input", () => {
       let v = parseInt(qtyInput.value.replace(/\D/g, "")) || 1;
@@ -153,7 +157,7 @@ function renderEquipment() {
   });
 }
 
-// ── 新增鑰匙 / 設備到共用清單 ───────────────────────────────
+// ── 新增鑰匙 / 設備 ──────────────────────────────────────────
 async function handleAdd(type, inputEl, msgEl) {
   const name = inputEl.value.trim();
   if (!name) return;
@@ -178,21 +182,18 @@ async function submit() {
   msg.innerHTML = "";
   const show = (t, cls = "msg-err") => { msg.innerHTML = `<div class="msg ${cls}">${t}</div>`; };
 
-  // 驗證學號選定
   const sidVal = $("sid").value.trim();
   if (!selected || selected.studentId !== sidVal) {
     return show("請從搜尋清單中選擇你的學號（不要只手動輸入）。");
   }
-  // 驗證後 3 碼
   const id3 = $("sid3").value.trim();
   if (!/^\d{3}$/.test(id3)) return show("請輸入身分證後 3 碼（3 位數字）。");
   if (id3 !== selected.idLast3) return show("身分證後 3 碼與學號不符，請重新確認。");
 
-  // 至少要借一項
+  if (!wantKey && !wantEq) return show("請先在「要借什麼？」選擇借鑰匙或借設備。");
+  if (wantKey && !chosenKey) return show("你選了借鑰匙，請在清單中挑一支鑰匙。");
   const eqArr = Object.entries(chosenEq).map(([name, qty]) => ({ name, qty }));
-  if (!chosenKey && eqArr.length === 0) {
-    return show("請至少選擇一支鑰匙或一項設備。");
-  }
+  if (wantEq && eqArr.length === 0) return show("你選了借設備，請至少勾選一項設備。");
 
   const btn = $("submitBtn");
   btn.disabled = true; btn.textContent = "送出中…";
@@ -203,8 +204,8 @@ async function submit() {
       className: selected.className,
       groupName: selected.groupName,
       idLast3: selected.idLast3,
-      key: chosenKey || null,
-      equipment: eqArr,
+      key: wantKey ? (chosenKey || null) : null,
+      equipment: wantEq ? eqArr : [],
       status: "borrowed",
       returnedBy: null,
       returnedAt: null,
@@ -220,8 +221,8 @@ async function submit() {
 
 function showDone(eqArr) {
   const parts = [];
-  if (chosenKey) parts.push(`<span class="tag tag-key">🔑 ${esc(chosenKey)}</span>`);
-  eqArr.forEach((e) => parts.push(`<span class="tag tag-eq">${esc(e.name)} ×${e.qty}</span>`));
+  if (wantKey && chosenKey) parts.push(`<span class="tag tag-key">🔑 ${esc(chosenKey)}</span>`);
+  if (wantEq) eqArr.forEach((e) => parts.push(`<span class="tag tag-eq">${esc(e.name)} ×${e.qty}</span>`));
   $("doneSummary").innerHTML =
     `<div><span class="strong">${esc(selected.name)}</span> · <span class="mono">${selected.studentId}</span></div>
      <div class="mt8">${parts.join(" ")}</div>
@@ -242,6 +243,9 @@ function bindEvents() {
   $("sid3").addEventListener("input", () => {
     $("sid3").value = $("sid3").value.replace(/\D/g, "").slice(0, 3);
   });
+
+  $("wantKey").addEventListener("click", toggleWantKey);
+  $("wantEq").addEventListener("click", toggleWantEq);
 
   $("addKeyBtn").addEventListener("click", () => handleAdd("keys", $("newKey"), $("keyMsg")));
   $("addEqBtn").addEventListener("click", () => handleAdd("equipment", $("newEq"), $("eqMsg")));
