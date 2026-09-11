@@ -52,6 +52,9 @@ async function enterApp() {
     bindCatalogAdds();
     bindStaffAdd();
     bindImport();
+    bindCollapsibles();
+    bindNewGroup();
+    bindDetailModal();
     // 每分鐘重繪一次今日總表，讓跨過午夜時自動歸零
     setInterval(() => { renderRecords(); }, 60 * 1000);
   } catch (err) {
@@ -69,6 +72,33 @@ function setupTabs() {
       tabs.forEach((name) => $("tab-" + name).classList.toggle("hidden", name !== t.dataset.tab));
     });
   });
+}
+
+// ── 收合區塊（鑰匙 / 設備清單）──────────────────────────────
+function bindCollapsibles() {
+  document.querySelectorAll(".collapse-head").forEach((head) => {
+    head.addEventListener("click", () => {
+      const body = $(head.dataset.target);
+      const nowHidden = body.classList.toggle("hidden");
+      head.classList.toggle("open", !nowHidden);
+      head.querySelector(".chev").textContent = nowHidden ? "▸" : "▾";
+    });
+  });
+}
+
+// ── 建立空白群組 ─────────────────────────────────────────────
+function bindNewGroup() {
+  $("newGroupBtn").addEventListener("click", async () => {
+    const name = prompt("輸入新群組名稱：", "");
+    if (!name || !name.trim()) return;
+    await addDoc(collection(db, "groups"), { name: name.trim(), students: [], createdAt: serverTimestamp() });
+  });
+}
+
+// ── 明細彈窗開關 ─────────────────────────────────────────────
+function bindDetailModal() {
+  $("detailClose").addEventListener("click", closeDetail);
+  $("detailModal").addEventListener("click", (e) => { if (e.target.id === "detailModal") closeDetail(); });
 }
 
 // ── 判斷時間是否為今天 ───────────────────────────────────────
@@ -181,7 +211,7 @@ function daysSince(ts) {
 function renderOverview() {
   const outstanding = records.filter((r) => r.status === "borrowed");
 
-  // 鑰匙狀態
+  // ── 鑰匙狀態（可點）──
   const holder = {};
   outstanding.forEach((r) => { if (r.key) holder[r.key] = r; });
   const keysOut = catalogKeys.filter((k) => holder[k]).length;
@@ -193,22 +223,35 @@ function renderOverview() {
     : catalogKeys.map((k) => {
         const r = holder[k];
         return r
-          ? `<div class="cell busy"><span class="ck">${esc(k)}</span><span class="cs mono">${esc(r.studentId)}</span></div>`
-          : `<div class="cell free"><span class="ck">${esc(k)}</span><span class="cs">可借用</span></div>`;
+          ? `<div class="cell busy clickable" data-kind="key" data-name="${esc(k)}"><span class="ck">${esc(k)}</span><span class="cs">借出中 ›</span></div>`
+          : `<div class="cell free" data-kind="key" data-name="${esc(k)}"><span class="ck">${esc(k)}</span><span class="cs">可借用</span></div>`;
       }).join("");
 
-  // 設備借出統計
-  const agg = {};
+  // ── 設備狀態（方塊，可點）──
+  const agg = {};   // 名稱 → 借出總數
   outstanding.forEach((r) => (r.equipment || []).forEach((e) => { agg[e.name] = (agg[e.name] || 0) + (e.qty || 0); }));
-  const totalEqOut = Object.values(agg).reduce((s, n) => s + n, 0);
-  $("ovEqOut").textContent = totalEqOut;
-  const aggEntries = Object.entries(agg).filter(([, n]) => n > 0);
-  $("eqOutList").innerHTML = aggEntries.length === 0
-    ? `<p class="small">目前沒有設備借出中。</p>`
-    : aggEntries.map(([name, n]) =>
-        `<div class="list-item"><span class="spread"><span class="tag tag-eq">${esc(name)}</span></span><span class="strong mono">${n} 件</span></div>`).join("");
+  $("ovEqOut").textContent = Object.values(agg).reduce((s, n) => s + n, 0);
 
-  // 未歸還清單（含跨日），可直接歸還
+  $("eqBoard").innerHTML = catalogEquip.length === 0
+    ? `<p class="small">清單是空的。</p>`
+    : catalogEquip.map((e) => {
+        const out = agg[e.name] || 0;
+        const capTxt = (e.max != null) ? ` / ${e.max}` : "";
+        if (out > 0) {
+          return `<div class="cell busy clickable" data-kind="eq" data-name="${esc(e.name)}">
+            <span class="ck">${esc(e.name)}</span><span class="cs">借出 ${out}${capTxt} ›</span></div>`;
+        }
+        return `<div class="cell free clickable" data-kind="eq" data-name="${esc(e.name)}">
+          <span class="ck">${esc(e.name)}</span><span class="cs">未借出${e.max != null ? `（上限 ${e.max}）` : ""}</span></div>`;
+      }).join("");
+
+  // 點方塊 → 開明細
+  document.querySelectorAll("#keyBoard .cell, #eqBoard .cell").forEach((cell) => {
+    if (cell.dataset.kind === "key" && !cell.classList.contains("busy")) return; // 可借用的鑰匙沒明細
+    cell.addEventListener("click", () => openDetail(cell.dataset.kind, cell.dataset.name));
+  });
+
+  // ── 未歸還清單（含跨日），可直接歸還 ──
   let list = outstanding;
   if (ovSearch) list = list.filter((r) =>
     String(r.studentId).toLowerCase().includes(ovSearch) || String(r.name).toLowerCase().includes(ovSearch));
@@ -228,8 +271,55 @@ function renderOverview() {
         </div>
       </td>
     </tr>`).join("");
-
   bindReturnButtons($("ovBody"));
+
+  // 若明細彈窗開著，順便刷新內容
+  if (openDetailRef) renderDetail();
+}
+
+// ── 借用明細彈窗 ─────────────────────────────────────────────
+let openDetailRef = null;   // { kind:"key"|"eq", name }
+function openDetail(kind, name) { openDetailRef = { kind, name }; renderDetail(); $("detailModal").classList.remove("hidden"); }
+function closeDetail() { openDetailRef = null; $("detailModal").classList.add("hidden"); }
+
+function renderDetail() {
+  if (!openDetailRef) return;
+  const { kind, name } = openDetailRef;
+  const outstanding = records.filter((r) => r.status === "borrowed");
+
+  if (kind === "key") {
+    const r = outstanding.find((x) => x.key === name);
+    $("detailTitle").textContent = `🔑 ${name}`;
+    $("detailBody").innerHTML = r
+      ? `<div class="list-item"><div class="spread">
+           <div><span class="strong">${esc(r.name)}</span> · <span class="mono">${esc(r.studentId)}</span></div>
+           <div class="small">${esc(r.className || r.groupName || "")}</div>
+         </div><div class="small mono">${fmtTime(r.borrowedAt)}</div></div>`
+      : `<p class="small">目前可借用，無人借出。</p>`;
+    return;
+  }
+
+  // 設備明細
+  const eq = catalogEquip.find((e) => e.name === name);
+  const max = eq ? eq.max : null;
+  const holders = [];
+  outstanding.forEach((r) => (r.equipment || []).forEach((e) => {
+    if (e.name === name) holders.push({ r, qty: e.qty || 0 });
+  }));
+  const totalOut = holders.reduce((s, h) => s + h.qty, 0);
+  const remain = (max != null) ? Math.max(0, max - totalOut) : null;
+
+  $("detailTitle").textContent = name;
+  const head = `<div class="msg msg-info">借出總數 <b>${totalOut}</b>${max != null ? `　上限 <b>${max}</b>　剩餘 <b>${remain}</b>` : "　（數量不限）"}</div>`;
+  const rows = holders.length === 0
+    ? `<p class="small">目前沒有人借出這項設備。</p>`
+    : holders.map((h) => `
+        <div class="list-item"><div class="spread">
+          <div><span class="strong">${esc(h.r.name)}</span> · <span class="mono">${esc(h.r.studentId)}</span>
+               <span class="small">${esc(h.r.className || h.r.groupName || "")}</span></div>
+          <div class="small mono">${fmtTime(h.r.borrowedAt)}</div>
+        </div><div class="strong mono" style="white-space:nowrap">借 ${h.qty}</div></div>`).join("");
+  $("detailBody").innerHTML = head + rows;
 }
 
 // ── 學生群組 ─────────────────────────────────────────────────

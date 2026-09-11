@@ -27,6 +27,14 @@
     .list-item.dragging { opacity:.5; border-color:var(--brass); border-style:dashed; }
     .list-item .maxInput { border:1.5px solid var(--line); border-radius:6px; }
     .list-item .maxInput:focus { outline:none; border-color:var(--steel); }
+
+    /* 收合區塊 */
+    .collapse-head { display:flex; align-items:center; justify-content:space-between; cursor:pointer; user-select:none; }
+    .collapse-head .chev { color:var(--ink-soft); font-size:16px; transition:transform .12s ease; }
+    .collapse-head.open .chev { transform:rotate(90deg); }
+    /* 可點擊的總覽方塊 */
+    .board .cell.clickable { cursor:pointer; }
+    .board .cell.clickable:hover { filter:brightness(.97); }
   </style>
 </head>
 <body>
@@ -58,8 +66,8 @@
       <div class="tabs">
         <button class="tab on" data-tab="records">今日借還總表</button>
         <button class="tab" data-tab="overview">借用狀況總覽</button>
-        <button class="tab" data-tab="groups">學生群組</button>
         <button class="tab" data-tab="catalog">鑰匙・設備清單</button>
+        <button class="tab" data-tab="groups">學生群組</button>
         <button class="tab" data-tab="staff">工讀生名單</button>
       </div>
 
@@ -107,12 +115,13 @@
         <div class="card">
           <h2 style="font-size:18px" class="mb16">🔑 鑰匙狀態</h2>
           <div id="keyBoard" class="board"></div>
-          <p class="hint mt16">綠色＝可借用；金色＝借出中（顯示借用人學號）。</p>
+          <p class="hint mt16">綠色＝可借用；金色＝借出中。點方塊可看借用人與借用時間。</p>
         </div>
 
         <div class="card">
-          <h2 style="font-size:18px" class="mb16">設備借出中統計</h2>
-          <div id="eqOutList"></div>
+          <h2 style="font-size:18px" class="mb16">設備狀態</h2>
+          <div id="eqBoard" class="board"></div>
+          <p class="hint mt16">綠色＝未借出；金色＝借出中（顯示借出數量／上限）。點方塊可看借用明細與剩餘數量。</p>
         </div>
 
         <div class="card">
@@ -151,7 +160,10 @@
         <div class="card">
           <div class="row-between mb16">
             <h2 style="font-size:18px">現有群組</h2>
-            <span class="small" id="groupTotals"></span>
+            <div class="row" style="gap:10px">
+              <span class="small" id="groupTotals"></span>
+              <button id="newGroupBtn" class="btn btn-ghost btn-sm">＋ 建立群組</button>
+            </div>
           </div>
           <div id="groupList"></div>
         </div>
@@ -173,23 +185,33 @@
       <!-- ============ 鑰匙・設備清單 ============ -->
       <section id="tab-catalog" class="hidden">
         <div class="card">
-          <h2 style="font-size:18px" class="mb16">🔑 鑰匙（教室）清單</h2>
-          <div class="row mb16">
-            <input id="addKeyInput" type="text" placeholder="新增教室鑰匙名稱" />
-            <button id="addKeyBtn2" class="btn btn-brass" style="white-space:nowrap">新增</button>
+          <div class="collapse-head" data-target="keyBody">
+            <h2 style="font-size:18px">🔑 鑰匙（教室）清單</h2>
+            <span class="chev">▸</span>
           </div>
-          <p class="hint mb16">可用滑鼠拖曳項目左側 <b>⠿</b> 調整順序，順序會同步套用到學生借用頁。</p>
-          <div id="keyList"></div>
+          <div id="keyBody" class="collapse-body hidden">
+            <div class="row mb16 mt16">
+              <input id="addKeyInput" type="text" placeholder="新增教室鑰匙名稱" />
+              <button id="addKeyBtn2" class="btn btn-brass" style="white-space:nowrap">新增</button>
+            </div>
+            <p class="hint mb16">可用滑鼠拖曳項目左側 <b>⠿</b> 調整順序，順序會同步套用到學生借用頁。</p>
+            <div id="keyList"></div>
+          </div>
         </div>
         <div class="card">
-          <h2 style="font-size:18px" class="mb16">設備清單</h2>
-          <div class="row mb16" style="flex-wrap:wrap">
-            <input id="addEqInput" type="text" placeholder="新增設備名稱" style="flex:2;min-width:160px" />
-            <input id="addEqMax" type="number" min="1" placeholder="數量上限（留空＝不限）" style="flex:1;min-width:150px" />
-            <button id="addEqBtn2" class="btn btn-steel" style="white-space:nowrap">新增</button>
+          <div class="collapse-head" data-target="eqBody">
+            <h2 style="font-size:18px">設備清單</h2>
+            <span class="chev">▸</span>
           </div>
-          <p class="hint mb16">數量上限留空代表不限制學生借出數量。可拖曳 <b>⠿</b> 調整順序；也可直接修改每項的上限。</p>
-          <div id="eqList2"></div>
+          <div id="eqBody" class="collapse-body hidden">
+            <div class="row mb16 mt16" style="flex-wrap:wrap">
+              <input id="addEqInput" type="text" placeholder="新增設備名稱" style="flex:2;min-width:160px" />
+              <input id="addEqMax" type="number" min="1" placeholder="數量上限（留空＝不限）" style="flex:1;min-width:150px" />
+              <button id="addEqBtn2" class="btn btn-steel" style="white-space:nowrap">新增</button>
+            </div>
+            <p class="hint mb16">數量上限留空代表不限制借出數量。可拖曳 <b>⠿</b> 調整順序；也可直接修改每項的上限。</p>
+            <div id="eqList2"></div>
+          </div>
         </div>
       </section>
 
@@ -206,6 +228,17 @@
         </div>
       </section>
 
+    </div>
+  </div>
+
+  <!-- 借用明細彈窗（點總覽方塊時顯示）-->
+  <div id="detailModal" class="modal-bg hidden">
+    <div class="modal" style="max-width:540px">
+      <div class="row-between mb16">
+        <h3 id="detailTitle">—</h3>
+        <button class="btn btn-ghost btn-sm" id="detailClose">關閉</button>
+      </div>
+      <div id="detailBody"></div>
     </div>
   </div>
 

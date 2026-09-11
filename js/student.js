@@ -17,6 +17,7 @@ let chosenEq = {};
 let wantKey = false;   // 是否要借鑰匙
 let wantEq = false;    // 是否要借設備
 let borrowedKeys = new Set();   // 目前借出中（未歸還）的鑰匙
+let borrowedEqQty = {};         // 目前借出中的設備數量：名稱 → 總數
 
 init();
 async function init() {
@@ -25,7 +26,7 @@ async function init() {
     await seedCatalogIfEmpty();
     await loadStudents();
     catalog = await loadCatalog();
-    watchBorrowedKeys();     // 即時追蹤哪些鑰匙已借出
+    watchOutstanding();      // 即時追蹤鑰匙與設備的借出狀況
     renderKeys();
     renderEquipment();
     $("loading").classList.add("hidden");
@@ -102,14 +103,29 @@ function toggleWantEq() {
   if (!wantEq) { chosenEq = {}; renderEquipment(); }
 }
 
-// 即時追蹤借出中（未歸還）的鑰匙，已借出的就不能再借
-function watchBorrowedKeys() {
+// 即時追蹤借出中（未歸還）的鑰匙與設備數量，已滿的就不能再借
+function watchOutstanding() {
   const q = query(collection(db, "records"), where("status", "==", "borrowed"));
   onSnapshot(q, (snap) => {
     borrowedKeys = new Set();
-    snap.forEach((d) => { const k = d.data().key; if (k) borrowedKeys.add(k); });
-    if (chosenKey && borrowedKeys.has(chosenKey)) chosenKey = null; // 剛好被別人借走 → 取消選取
+    borrowedEqQty = {};
+    snap.forEach((d) => {
+      const r = d.data();
+      if (r.key) borrowedKeys.add(r.key);
+      (r.equipment || []).forEach((e) => { borrowedEqQty[e.name] = (borrowedEqQty[e.name] || 0) + (e.qty || 0); });
+    });
+    // 若正選著的鑰匙被別人借走 → 取消
+    if (chosenKey && borrowedKeys.has(chosenKey)) chosenKey = null;
+    // 依剩餘量夾住已勾選的設備
+    catalog.equipment.forEach((e) => {
+      if (e.max != null && chosenEq[e.name] != null) {
+        const avail = Math.max(0, e.max - (borrowedEqQty[e.name] || 0));
+        if (avail <= 0) delete chosenEq[e.name];
+        else if (chosenEq[e.name] > avail) chosenEq[e.name] = avail;
+      }
+    });
     renderKeys();
+    renderEquipment();
   });
 }
 
@@ -132,22 +148,34 @@ function renderKeys() {
   });
 }
 
-// ── 設備（複選 + 數量，支援上限）──────────────────────────
+// ── 設備（複選 + 數量，依剩餘量限制）───────────────────────
 function renderEquipment() {
   const box = $("eqList");
-  const maxMap = Object.fromEntries(catalog.equipment.map((e) => [e.name, e.max]));
+  const maxMap = {}, availMap = {};
+  catalog.equipment.forEach((e) => {
+    maxMap[e.name] = e.max;
+    availMap[e.name] = (e.max == null) ? Infinity : Math.max(0, e.max - (borrowedEqQty[e.name] || 0));
+  });
+
   box.innerHTML = catalog.equipment.map((e) => {
-    const name = e.name, max = e.max;
+    const name = e.name, max = e.max, avail = availMap[name];
+    // 有上限且已借完 → 停用
+    if (max != null && avail <= 0) {
+      return `<div class="eq-row dim" style="opacity:.5">
+        <span style="flex:1;font-weight:600">${esc(name)}
+          <span class="small" style="color:var(--danger);margin-left:6px">已借完（上限 ${max}）</span></span>
+      </div>`;
+    }
     const on = name in chosenEq;
     const qty = chosenEq[name] || 1;
-    const maxLabel = (max != null)
-      ? `<span class="small" style="color:var(--ink-soft);margin-left:6px">上限 ${max}</span>` : "";
-    const incDis = (max != null && qty >= max) ? "disabled" : "";
+    const info = (max != null)
+      ? `<span class="small" style="color:var(--ink-soft);margin-left:6px">剩 ${avail} 可借（上限 ${max}）</span>` : "";
+    const incDis = (max != null && qty >= avail) ? "disabled" : "";
     return `
       <div class="eq-row ${on ? "" : "dim"}" data-eq="${esc(name)}">
         <label class="eq-check">
           <input type="checkbox" ${on ? "checked" : ""} />
-          <span>${esc(name)}${maxLabel}</span>
+          <span>${esc(name)}${info}</span>
         </label>
         <div class="stepper">
           <button type="button" data-act="dec">−</button>
@@ -157,17 +185,18 @@ function renderEquipment() {
       </div>`;
   }).join("");
 
-  [...box.querySelectorAll(".eq-row")].forEach((row) => {
+  [...box.querySelectorAll(".eq-row[data-eq]")].forEach((row) => {
     const name = row.dataset.eq;
-    const max = maxMap[name];
+    const cap = availMap[name];   // 上限考量剩餘量後的實際可借上限
     const clamp = (v) => {
       v = parseInt(v) || 1;
       if (v < 1) v = 1;
-      if (max != null && v > max) v = max;
+      if (cap !== Infinity && v > cap) v = cap;
       return v;
     };
     const cb = row.querySelector('input[type=checkbox]');
     const qtyInput = row.querySelector(".qty");
+    if (!cb) return;
     cb.addEventListener("change", () => {
       if (cb.checked) chosenEq[name] = clamp(qtyInput.value);
       else delete chosenEq[name];
@@ -231,21 +260,38 @@ async function submit() {
   const btn = $("submitBtn");
   btn.disabled = true; btn.textContent = "送出中…";
   try {
-    // 送出前再確認一次鑰匙沒有被別人搶先借走
-    if (wantKey && chosenKey) {
-      const snap = await getDocs(query(collection(db, "records"), where("status", "==", "borrowed")));
-      const taken = new Set();
-      snap.forEach((d) => { const k = d.data().key; if (k) taken.add(k); });
-      if (taken.has(chosenKey)) {
-        const takenName = chosenKey;
-        borrowedKeys = taken;
-        chosenKey = null;
-        renderKeys();
-        show(`鑰匙「${esc(takenName)}」剛剛已被借走，請改選其他教室。`);
-        btn.disabled = false; btn.textContent = "送出借用登記";
-        return;
+    // 送出前再抓一次最新借出狀況，確認鑰匙沒被搶走、設備還有剩餘
+    const snap = await getDocs(query(collection(db, "records"), where("status", "==", "borrowed")));
+    const takenKeys = new Set();
+    const outQty = {};
+    snap.forEach((d) => {
+      const r = d.data();
+      if (r.key) takenKeys.add(r.key);
+      (r.equipment || []).forEach((e) => { outQty[e.name] = (outQty[e.name] || 0) + (e.qty || 0); });
+    });
+
+    if (wantKey && chosenKey && takenKeys.has(chosenKey)) {
+      const takenName = chosenKey;
+      borrowedKeys = takenKeys; borrowedEqQty = outQty; chosenKey = null;
+      renderKeys(); renderEquipment();
+      show(`鑰匙「${esc(takenName)}」剛剛已被借走，請改選其他教室。`);
+      btn.disabled = false; btn.textContent = "送出借用登記";
+      return;
+    }
+    for (const item of eqArr) {
+      const m = eqMaxMap[item.name];
+      if (m != null) {
+        const avail = m - (outQty[item.name] || 0);
+        if (item.qty > avail) {
+          borrowedEqQty = outQty; borrowedKeys = takenKeys;
+          renderEquipment();
+          show(`設備「${esc(item.name)}」目前僅剩 ${Math.max(0, avail)} 可借，請調整數量後再送出。`);
+          btn.disabled = false; btn.textContent = "送出借用登記";
+          return;
+        }
       }
     }
+
     await addDoc(collection(db, "records"), {
       studentId: selected.studentId,
       name: selected.name,
