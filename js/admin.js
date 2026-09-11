@@ -4,7 +4,8 @@
 import {
   db, ready, collection, doc, getDoc, setDoc, updateDoc, deleteDoc, addDoc,
   onSnapshot, query, orderBy, serverTimestamp,
-  loadCatalog, addCatalogItem, removeCatalogItem, seedCatalogIfEmpty, fmtTime,
+  loadCatalog, addCatalogItem, removeCatalogItem, setCatalogItems, normEquip,
+  seedCatalogIfEmpty, fmtTime,
 } from "./db.js";
 import { ADMIN_PASSWORD } from "./config.js";
 
@@ -17,6 +18,7 @@ let catalogEquip = [];
 let recFilter = "out";
 let recSearch = "";
 let ovSearch = "";
+let dragFrom = null;   // 拖曳排序：來源索引
 
 // ── 密碼閘門 ─────────────────────────────────────────────────
 const KEY = "cb_admin_ok";
@@ -333,31 +335,86 @@ function subscribeCatalog() {
     renderOverview();
   });
   onSnapshot(doc(db, "catalog", "equipment"), (d) => {
-    catalogEquip = d.exists() ? d.data().items || [] : [];
+    catalogEquip = d.exists() ? normEquip(d.data().items) : [];
     renderCatalogList("eqList2", "equipment", catalogEquip, "tag-eq");
   });
 }
 function renderCatalogList(elId, type, items, tagCls) {
-  $(elId).innerHTML = items.length === 0
-    ? `<p class="small">清單是空的。</p>`
-    : items.map((it) => `
-      <div class="list-item">
-        <span class="spread"><span class="tag ${tagCls}">${esc(it)}</span></span>
-        <button class="btn btn-danger-ghost btn-sm delCat" data-type="${type}" data-name="${esc(it)}">刪除</button>
-      </div>`).join("");
-  $(elId).querySelectorAll(".delCat").forEach((b) => b.addEventListener("click", async () => {
+  const box = $(elId);
+  if (!items.length) { box.innerHTML = `<p class="small">清單是空的。</p>`; return; }
+
+  box.innerHTML = items.map((it, i) => {
+    const name = (typeof it === "string") ? it : it.name;
+    const maxCtrl = (type === "equipment")
+      ? `<span class="small" style="color:var(--ink-soft)">上限</span>
+         <input class="maxInput" type="number" min="1" data-i="${i}" value="${it.max == null ? "" : it.max}" placeholder="不限" style="width:78px;padding:6px 8px" />`
+      : "";
+    return `<div class="list-item sortable" draggable="true" data-i="${i}">
+        <span class="drag" title="拖曳排序">⠿</span>
+        <span class="spread"><span class="tag ${tagCls}">${esc(name)}</span></span>
+        ${maxCtrl}
+        <button class="btn btn-danger-ghost btn-sm delCat" data-type="${type}" data-name="${esc(name)}">刪除</button>
+      </div>`;
+  }).join("");
+
+  // 刪除
+  box.querySelectorAll(".delCat").forEach((b) => b.addEventListener("click", async () => {
     if (confirm(`確定從清單刪除「${b.dataset.name}」？（不影響已建立的借出紀錄）`))
       await removeCatalogItem(b.dataset.type, b.dataset.name);
   }));
+
+  // 修改設備數量上限（留空＝不限）
+  if (type === "equipment") {
+    box.querySelectorAll(".maxInput").forEach((inp) => {
+      inp.addEventListener("change", async () => {
+        const i = Number(inp.dataset.i);
+        const v = inp.value.trim();
+        const next = catalogEquip.map((e) => ({ name: e.name, max: e.max }));
+        next[i].max = (v === "" ? null : Math.max(1, parseInt(v) || 1));
+        await setCatalogItems("equipment", next);
+      });
+    });
+  }
+
+  // 拖曳排序
+  box.querySelectorAll(".sortable").forEach((row) => {
+    row.addEventListener("dragstart", (e) => {
+      dragFrom = Number(row.dataset.i);
+      row.classList.add("dragging");
+      e.dataTransfer.effectAllowed = "move";
+    });
+    row.addEventListener("dragend", () => row.classList.remove("dragging"));
+    row.addEventListener("dragover", (e) => e.preventDefault());
+    row.addEventListener("drop", async (e) => {
+      e.preventDefault();
+      const to = Number(row.dataset.i);
+      if (dragFrom == null || dragFrom === to) { dragFrom = null; return; }
+      const arr = (type === "keys")
+        ? [...catalogKeys]
+        : catalogEquip.map((x) => ({ name: x.name, max: x.max }));
+      const [moved] = arr.splice(dragFrom, 1);
+      arr.splice(to, 0, moved);
+      dragFrom = null;
+      await setCatalogItems(type, arr);   // onSnapshot 會自動重繪成新順序
+    });
+  });
 }
+
 function bindCatalogAdds() {
-  const add = async (type, input) => {
+  $("addKeyBtn2").addEventListener("click", async () => {
+    const input = $("addKeyInput");
     const name = input.value.trim(); if (!name) return;
-    const ok = await addCatalogItem(type, name);
+    const ok = await addCatalogItem("keys", name);
     if (!ok) alert(`「${name}」已存在，不能重複新增。`); else input.value = "";
-  };
-  $("addKeyBtn2").addEventListener("click", () => add("keys", $("addKeyInput")));
-  $("addEqBtn2").addEventListener("click", () => add("equipment", $("addEqInput")));
+  });
+  $("addEqBtn2").addEventListener("click", async () => {
+    const input = $("addEqInput"), maxInput = $("addEqMax");
+    const name = input.value.trim(); if (!name) return;
+    const max = maxInput.value.trim() === "" ? null : Math.max(1, parseInt(maxInput.value) || 1);
+    const ok = await addCatalogItem("equipment", name, max);
+    if (!ok) alert(`「${name}」已存在，不能重複新增。`);
+    else { input.value = ""; maxInput.value = ""; }
+  });
   $("addKeyInput").addEventListener("keydown", (e) => { if (e.key === "Enter") $("addKeyBtn2").click(); });
   $("addEqInput").addEventListener("keydown", (e) => { if (e.key === "Enter") $("addEqBtn2").click(); });
 }

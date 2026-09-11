@@ -20,6 +20,13 @@
     .board .cell .cs { font-size:12px; }
     .board .cell.free { border-color:var(--returned); color:var(--returned); }
     .board .cell.busy { border-color:var(--brass); background:var(--brass-tint); color:var(--brass); }
+
+    /* 清單拖曳排序 */
+    .list-item.sortable .drag { cursor:grab; color:var(--ink-soft); font-size:18px; line-height:1; user-select:none; padding:0 4px 0 0; }
+    .list-item.sortable .drag:active { cursor:grabbing; }
+    .list-item.dragging { opacity:.5; border-color:var(--brass); border-style:dashed; }
+    .list-item .maxInput { border:1.5px solid var(--line); border-radius:6px; }
+    .list-item .maxInput:focus { outline:none; border-color:var(--steel); }
   </style>
 </head>
 <body>
@@ -171,14 +178,17 @@
             <input id="addKeyInput" type="text" placeholder="新增教室鑰匙名稱" />
             <button id="addKeyBtn2" class="btn btn-brass" style="white-space:nowrap">新增</button>
           </div>
+          <p class="hint mb16">可用滑鼠拖曳項目左側 <b>⠿</b> 調整順序，順序會同步套用到學生借用頁。</p>
           <div id="keyList"></div>
         </div>
         <div class="card">
           <h2 style="font-size:18px" class="mb16">設備清單</h2>
-          <div class="row mb16">
-            <input id="addEqInput" type="text" placeholder="新增設備名稱" />
+          <div class="row mb16" style="flex-wrap:wrap">
+            <input id="addEqInput" type="text" placeholder="新增設備名稱" style="flex:2;min-width:160px" />
+            <input id="addEqMax" type="number" min="1" placeholder="數量上限（留空＝不限）" style="flex:1;min-width:150px" />
             <button id="addEqBtn2" class="btn btn-steel" style="white-space:nowrap">新增</button>
           </div>
+          <p class="hint mb16">數量上限留空代表不限制學生借出數量。可拖曳 <b>⠿</b> 調整順序；也可直接修改每項的上限。</p>
           <div id="eqList2"></div>
         </div>
       </section>

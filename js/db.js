@@ -71,39 +71,62 @@ export function fmtTime(ts) {
 }
 
 // 讀取整份鑰匙 / 設備清單（catalog）。回傳 { keys:[], equipment:[] }
+// 設備項目統一整理成物件 { name, max }。max 為 null 代表不限制。
+// 相容舊資料：舊的設備是純字串，會被轉成 { name, max:null }。
+export function normEquip(items) {
+  return (items || []).map((it) =>
+    typeof it === "string"
+      ? { name: it, max: null }
+      : { name: it.name, max: (it.max === undefined || it.max === "" ? null : it.max) }
+  );
+}
+
 export async function loadCatalog() {
   const keysSnap = await getDoc(doc(db, "catalog", "keys"));
   const eqSnap = await getDoc(doc(db, "catalog", "equipment"));
   return {
     keys: keysSnap.exists() ? keysSnap.data().items || [] : [],
-    equipment: eqSnap.exists() ? eqSnap.data().items || [] : [],
+    equipment: eqSnap.exists() ? normEquip(eqSnap.data().items) : [],
   };
 }
 
-// 新增一個項目到清單。type 為 "keys" 或 "equipment"。名稱相同不會重複加入。
-// 回傳 true = 成功新增；false = 名稱已存在。
-export async function addCatalogItem(type, name) {
-  name = name.trim();
+// 取得清單中所有項目的「名稱」（設備可能是物件，鑰匙是字串）
+function itemNames(items) {
+  return (items || []).map((i) => (typeof i === "string" ? i : i.name));
+}
+
+// 新增一個項目。type 為 "keys" 或 "equipment"；名稱相同不會重複加入。
+// 設備可帶 max（數量上限），留空 / null = 不限制。回傳 true=成功，false=名稱已存在。
+export async function addCatalogItem(type, name, max = null) {
+  name = String(name).trim();
   if (!name) return false;
   const ref = doc(db, "catalog", type);
   const snap = await getDoc(ref);
   const items = snap.exists() ? snap.data().items || [] : [];
-  if (items.some((i) => i === name)) return false; // 名稱相同不能新增
-  if (snap.exists()) {
-    await updateDoc(ref, { items: arrayUnion(name) });
-  } else {
-    await setDoc(ref, { items: [name] });
-  }
+  if (itemNames(items).includes(name)) return false;
+  const newItem =
+    type === "equipment"
+      ? { name, max: (max === "" || max == null ? null : Number(max)) }
+      : name;
+  await setDoc(ref, { items: [...items, newItem] });
   return true;
 }
 
-// 刪除清單項目（後台用）
+// 刪除清單項目（依名稱）
 export async function removeCatalogItem(type, name) {
   const ref = doc(db, "catalog", type);
-  await updateDoc(ref, { items: arrayRemove(name) });
+  const snap = await getDoc(ref);
+  const items = snap.exists() ? snap.data().items || [] : [];
+  const next = items.filter((i) => (typeof i === "string" ? i : i.name) !== name);
+  await setDoc(ref, { items: next });
 }
 
-// 若清單為空，寫入你指定的預設鑰匙與設備（第一次使用時自動建立）
+// 直接覆寫整份清單（用於拖曳排序、修改數量上限）
+export async function setCatalogItems(type, items) {
+  await setDoc(doc(db, "catalog", type), { items });
+}
+
+// 若清單為空，寫入預設鑰匙與設備（第一次使用時自動建立）
 export async function seedCatalogIfEmpty() {
   const cat = await loadCatalog();
   if (cat.keys.length === 0) {
@@ -116,10 +139,8 @@ export async function seedCatalogIfEmpty() {
   }
   if (cat.equipment.length === 0) {
     await setDoc(doc(db, "catalog", "equipment"), {
-      items: [
-        "塑膠立牌", "簡報筆", "電腦", "海報架",
-        "相機", "腳架", "延長線", "長條桌",
-      ],
+      items: ["塑膠立牌", "簡報筆", "電腦", "海報架", "相機", "腳架", "延長線", "長條桌"]
+        .map((name) => ({ name, max: null })),
     });
   }
 }

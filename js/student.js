@@ -132,46 +132,54 @@ function renderKeys() {
   });
 }
 
-// ── 設備（複選 + 數量）─────────────────────────────────────
+// ── 設備（複選 + 數量，支援上限）──────────────────────────
 function renderEquipment() {
   const box = $("eqList");
+  const maxMap = Object.fromEntries(catalog.equipment.map((e) => [e.name, e.max]));
   box.innerHTML = catalog.equipment.map((e) => {
-    const on = e in chosenEq;
-    const qty = chosenEq[e] || 1;
+    const name = e.name, max = e.max;
+    const on = name in chosenEq;
+    const qty = chosenEq[name] || 1;
+    const maxLabel = (max != null)
+      ? `<span class="small" style="color:var(--ink-soft);margin-left:6px">上限 ${max}</span>` : "";
+    const incDis = (max != null && qty >= max) ? "disabled" : "";
     return `
-      <div class="eq-row ${on ? "" : "dim"}" data-eq="${esc(e)}">
+      <div class="eq-row ${on ? "" : "dim"}" data-eq="${esc(name)}">
         <label class="eq-check">
           <input type="checkbox" ${on ? "checked" : ""} />
-          <span>${esc(e)}</span>
+          <span>${esc(name)}${maxLabel}</span>
         </label>
         <div class="stepper">
           <button type="button" data-act="dec">−</button>
           <input class="qty" type="text" inputmode="numeric" value="${qty}" />
-          <button type="button" data-act="inc">+</button>
+          <button type="button" data-act="inc" ${incDis}>+</button>
         </div>
       </div>`;
   }).join("");
 
   [...box.querySelectorAll(".eq-row")].forEach((row) => {
     const name = row.dataset.eq;
+    const max = maxMap[name];
+    const clamp = (v) => {
+      v = parseInt(v) || 1;
+      if (v < 1) v = 1;
+      if (max != null && v > max) v = max;
+      return v;
+    };
     const cb = row.querySelector('input[type=checkbox]');
     const qtyInput = row.querySelector(".qty");
     cb.addEventListener("change", () => {
-      if (cb.checked) chosenEq[name] = parseInt(qtyInput.value) || 1;
+      if (cb.checked) chosenEq[name] = clamp(qtyInput.value);
       else delete chosenEq[name];
       renderEquipment();
     });
     row.querySelector('[data-act=inc]').addEventListener("click", () => {
-      chosenEq[name] = (parseInt(qtyInput.value) || 0) + 1; renderEquipment();
+      chosenEq[name] = clamp((parseInt(qtyInput.value) || 0) + 1); renderEquipment();
     });
     row.querySelector('[data-act=dec]').addEventListener("click", () => {
       chosenEq[name] = Math.max(1, (parseInt(qtyInput.value) || 1) - 1); renderEquipment();
     });
-    qtyInput.addEventListener("input", () => {
-      let v = parseInt(qtyInput.value.replace(/\D/g, "")) || 1;
-      if (v < 1) v = 1;
-      chosenEq[name] = v;
-    });
+    qtyInput.addEventListener("input", () => { chosenEq[name] = clamp(qtyInput.value); });
   });
 }
 
@@ -210,7 +218,14 @@ async function submit() {
 
   if (!wantKey && !wantEq) return show("請先在「要借什麼？」選擇借鑰匙或借設備。");
   if (wantKey && !chosenKey) return show("你選了借鑰匙，請在清單中挑一支鑰匙。");
-  const eqArr = Object.entries(chosenEq).map(([name, qty]) => ({ name, qty }));
+  const eqMaxMap = Object.fromEntries(catalog.equipment.map((e) => [e.name, e.max]));
+  const eqArr = Object.entries(chosenEq).map(([name, qty]) => {
+    const m = eqMaxMap[name];
+    let q = parseInt(qty) || 1;
+    if (q < 1) q = 1;
+    if (m != null && q > m) q = m;
+    return { name, qty: q };
+  });
   if (wantEq && eqArr.length === 0) return show("你選了借設備，請至少勾選一項設備。");
 
   const btn = $("submitBtn");
