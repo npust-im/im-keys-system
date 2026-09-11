@@ -49,10 +49,6 @@ body {
   font-family: var(--sans);
   color: var(--ink);
   background-color: var(--paper);
-  /* 平滑淡藍綠洗色，無硬邊接縫 */
-  background-image: linear-gradient(180deg,
-    rgba(110,158,134,.10) 0, rgba(63,79,120,.05) 26%, rgba(0,0,0,0) 56%);
-  background-repeat: no-repeat;
   line-height: 1.6;
   font-size: 16px;
 }
@@ -66,7 +62,7 @@ input, select { font-family: inherit; font-size: 16px; }
 a { color: var(--primary); }
 
 /* ── 頁首：logo ＋ 三色髮絲線 ─────────────────────────────── */
-.site-head { text-align: center; padding: 6px 0 6px; position: relative; background: var(--paper); }
+.site-head { text-align: center; padding: 8px 0 6px; position: relative; }
 .site-logo { width: 78px; height: 78px; object-fit: contain; display: block; margin: 0 auto; }
 .site-logo.sm { width: 32px; height: 32px; }
 .brandbar {
@@ -214,12 +210,12 @@ table.ledger tbody tr.returned { background: #f4f8f5; }
 table.ledger td.num { font-family: var(--mono); font-variant-numeric: tabular-nums; white-space: nowrap; }
 
 /* ── 頁首列（後台）────────────────────────────────────────── */
-.topbar { background: #26346e; color: #fff; padding: 12px 20px; display: flex; align-items: center; gap: 16px; flex-wrap: wrap; }
-.topbar .brand { font-weight: 700; font-size: 17px; display: flex; align-items: center; gap: 10px; }
-.topbar .brand .site-logo { background:#fff; border-radius:8px; padding:3px; }
+.topbar { position: relative; background: #fff; color: var(--ink); padding: 12px 20px; display: flex; align-items: center; gap: 16px; flex-wrap: wrap; border-bottom: 1px solid var(--line); }
+.topbar::after { content:""; position:absolute; left:0; right:0; bottom:0; height:3px; background: linear-gradient(90deg, var(--brand-blue) 0 33.3%, var(--brand-red) 33.3% 66.6%, var(--brand-green) 66.6% 100%); }
+.topbar .brand { font-weight: 700; font-size: 17px; display: flex; align-items: center; gap: 10px; color: var(--ink); }
 .topbar .spread { flex: 1; }
-.topbar a, .topbar button.linklike { color: #d6dde8; background: none; border: none; font-weight: 600; text-decoration: none; cursor: pointer; font-size: 15px; }
-.topbar a:hover, .topbar button.linklike:hover { color: #fff; }
+.topbar a, .topbar button.linklike { color: var(--ink-soft); background: none; border: none; font-weight: 600; text-decoration: none; cursor: pointer; font-size: 15px; }
+.topbar a:hover, .topbar button.linklike:hover { color: var(--primary); }
 
 /* 後台分頁 */
 .tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--line); margin-bottom: 20px; flex-wrap: wrap; }
