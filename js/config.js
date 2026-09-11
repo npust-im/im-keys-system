@@ -5,7 +5,7 @@
 // ── 1. Firebase 設定 ─────────────────────────────────────────
 // 到 Firebase 主控台 → 專案設定 → 你的應用程式 → 複製 firebaseConfig，
 // 把下面整段換成你自己的。（README 有圖解步驟）
-const firebaseConfig = {
+export const firebaseConfig = {
   apiKey: "AIzaSyA3INR5x-YgpOB8WgBWflmO55fmxyfahsg",
   authDomain: "im-keys-system.firebaseapp.com",
   projectId: "im-keys-system",
