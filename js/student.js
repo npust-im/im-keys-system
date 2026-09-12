@@ -18,6 +18,7 @@ let wantKey = false;   // 是否要借鑰匙
 let wantEq = false;    // 是否要借設備
 let borrowedKeys = new Set();   // 目前借出中（未歸還）的鑰匙
 let borrowedEqQty = {};         // 目前借出中的設備數量：名稱 → 總數
+let allOutstanding = [];        // 目前所有未歸還紀錄（供「我的未還」與重複提醒）
 
 init();
 async function init() {
@@ -114,14 +115,14 @@ function watchOutstanding() {
   onSnapshot(q, (snap) => {
     borrowedKeys = new Set();
     borrowedEqQty = {};
+    allOutstanding = [];
     snap.forEach((d) => {
       const r = d.data();
+      allOutstanding.push({ id: d.id, ...r });
       if (r.key) borrowedKeys.add(r.key);
       (r.equipment || []).forEach((e) => { borrowedEqQty[e.name] = (borrowedEqQty[e.name] || 0) + (e.qty || 0); });
     });
-    // 若正選著的鑰匙被別人借走 → 取消
     if (chosenKey && borrowedKeys.has(chosenKey)) chosenKey = null;
-    // 依剩餘量夾住已勾選的設備
     catalog.equipment.forEach((e) => {
       if (e.max != null && chosenEq[e.name] != null) {
         const avail = Math.max(0, e.max - (borrowedEqQty[e.name] || 0));
@@ -131,7 +132,30 @@ function watchOutstanding() {
     });
     renderKeys();
     renderEquipment();
+    renderMyOut();
   });
+}
+
+// 我目前的未歸還（功能 11）：驗證通過後才顯示，避免看到別人的資料
+function myOutstanding() {
+  if (!selected) return [];
+  const ok = /^\d{3}$/.test($("sid3").value.trim()) && $("sid3").value.trim() === selected.idLast3;
+  if (!ok) return [];
+  return allOutstanding.filter((r) => String(r.studentId) === selected.studentId);
+}
+function renderMyOut() {
+  const box = $("myOut");
+  if (!box) return;
+  const mine = myOutstanding();
+  if (mine.length === 0) { box.classList.add("hidden"); box.innerHTML = ""; return; }
+  const items = mine.map((r) => {
+    const parts = [];
+    if (r.key) parts.push(esc(r.key));
+    (r.equipment || []).forEach((e) => parts.push(`${esc(e.name)}×${e.qty}`));
+    return parts.join("、");
+  }).join("；");
+  box.innerHTML = `<div class="msg msg-info" style="margin:0">提醒：你目前尚有 <b>${mine.length}</b> 筆未歸還（${items}）。如需再借請繼續，記得盡快歸還。</div>`;
+  box.classList.remove("hidden");
 }
 
 // ── 鑰匙（單選晶片）────────────────────────────────────────
@@ -264,70 +288,82 @@ async function submit() {
   });
   if (wantEq && eqArr.length === 0) return show("你選了借設備，請至少勾選一項設備。");
 
-  const btn = $("submitBtn");
+  // 送出前確認（功能 9）＋ 重複借用提醒（功能 12）
+  openConfirm(eqArr, eqMaxMap);
+}
+
+let pending = null;
+function openConfirm(eqArr, eqMaxMap) {
+  pending = { eqArr, eqMaxMap };
+  const parts = [];
+  if (wantKey && chosenKey) parts.push(`<span class="tag tag-key">🔑 ${esc(chosenKey)}</span>`);
+  eqArr.forEach((e) => parts.push(`<span class="tag tag-eq">${esc(e.name)} ×${e.qty}</span>`));
+  const mine = myOutstanding();
+  const dup = mine.length
+    ? `<div class="msg msg-err" style="margin:12px 0 0">你目前尚有 <b>${mine.length}</b> 筆未歸還，確定要再借嗎？</div>` : "";
+  $("confirmBody").innerHTML =
+    `<div class="receipt">
+       <div class="r-row"><span class="r-k">登記人</span><span class="strong">${esc(selected.name)} · <span class="mono">${esc(selected.studentId)}</span></span></div>
+       <div class="r-row"><span class="r-k">借用內容</span><span style="text-align:right">${parts.join(" ") || "—"}</span></div>
+       <div class="r-row"><span class="r-k">借出時間</span><span class="mono">${fmtTime(new Date())}</span></div>
+     </div>${dup}`;
+  $("confirmModal").classList.remove("hidden");
+}
+
+async function doSubmit() {
+  if (!pending) return;
+  const { eqArr, eqMaxMap } = pending;
+  const btn = $("confirmGo");
   btn.disabled = true; btn.textContent = "送出中…";
+  const fail = (t) => {
+    $("confirmModal").classList.add("hidden");
+    $("submitMsg").innerHTML = `<div class="msg msg-err">${t}</div>`;
+    btn.disabled = false; btn.textContent = "確認送出";
+    window.scrollTo({ top: document.body.scrollHeight, behavior: "smooth" });
+  };
   try {
-    // 送出前再抓一次最新借出狀況，確認鑰匙沒被搶走、設備還有剩餘
     const snap = await getDocs(query(collection(db, "records"), where("status", "==", "borrowed")));
-    const takenKeys = new Set();
-    const outQty = {};
-    snap.forEach((d) => {
-      const r = d.data();
-      if (r.key) takenKeys.add(r.key);
-      (r.equipment || []).forEach((e) => { outQty[e.name] = (outQty[e.name] || 0) + (e.qty || 0); });
-    });
+    const takenKeys = new Set(); const outQty = {};
+    snap.forEach((d) => { const r = d.data(); if (r.key) takenKeys.add(r.key); (r.equipment || []).forEach((e) => { outQty[e.name] = (outQty[e.name] || 0) + (e.qty || 0); }); });
 
     if (wantKey && chosenKey && takenKeys.has(chosenKey)) {
-      const takenName = chosenKey;
-      borrowedKeys = takenKeys; borrowedEqQty = outQty; chosenKey = null;
-      renderKeys(); renderEquipment();
-      show(`鑰匙「${esc(takenName)}」剛剛已被借走，請改選其他教室。`);
-      btn.disabled = false; btn.textContent = "送出借用登記";
-      return;
+      const nm = chosenKey; borrowedKeys = takenKeys; borrowedEqQty = outQty; chosenKey = null; renderKeys(); renderEquipment();
+      return fail(`鑰匙「${esc(nm)}」剛剛已被借走，請改選其他教室。`);
     }
     for (const item of eqArr) {
       const m = eqMaxMap[item.name];
       if (m != null) {
         const avail = m - (outQty[item.name] || 0);
-        if (item.qty > avail) {
-          borrowedEqQty = outQty; borrowedKeys = takenKeys;
-          renderEquipment();
-          show(`設備「${esc(item.name)}」目前僅剩 ${Math.max(0, avail)} 可借，請調整數量後再送出。`);
-          btn.disabled = false; btn.textContent = "送出借用登記";
-          return;
-        }
+        if (item.qty > avail) { borrowedEqQty = outQty; borrowedKeys = takenKeys; renderEquipment(); return fail(`設備「${esc(item.name)}」目前僅剩 ${Math.max(0, avail)} 可借，請調整數量。`); }
       }
     }
-
-    await addDoc(collection(db, "records"), {
-      studentId: selected.studentId,
-      name: selected.name,
-      className: selected.className,
-      groupName: selected.groupName,
-      idLast3: selected.idLast3,
-      key: wantKey ? (chosenKey || null) : null,
-      equipment: wantEq ? eqArr : [],
-      status: "borrowed",
-      returnedBy: null,
-      returnedAt: null,
-      borrowedAt: serverTimestamp(),
-      createdAt: serverTimestamp(),
+    const ref = await addDoc(collection(db, "records"), {
+      studentId: selected.studentId, name: selected.name, className: selected.className,
+      groupName: selected.groupName, idLast3: selected.idLast3,
+      key: wantKey ? (chosenKey || null) : null, equipment: wantEq ? eqArr : [],
+      status: "borrowed", returnedBy: null, returnedAt: null,
+      borrowedAt: serverTimestamp(), createdAt: serverTimestamp(),
     });
-    showDone(eqArr);
+    $("confirmModal").classList.add("hidden");
+    showDone(eqArr, ref.id);
   } catch (err) {
-    show("送出失敗，請重試。" + err.message);
-    btn.disabled = false; btn.textContent = "送出借用登記";
+    fail("送出失敗，請重試。" + err.message);
+  } finally {
+    btn.disabled = false; btn.textContent = "確認送出";
   }
 }
 
-function showDone(eqArr) {
+function showDone(eqArr, refId) {
   const parts = [];
   if (wantKey && chosenKey) parts.push(`<span class="tag tag-key">🔑 ${esc(chosenKey)}</span>`);
   if (wantEq) eqArr.forEach((e) => parts.push(`<span class="tag tag-eq">${esc(e.name)} ×${e.qty}</span>`));
   $("doneSummary").innerHTML =
-    `<div><span class="strong">${esc(selected.name)}</span> · <span class="mono">${selected.studentId}</span></div>
-     <div class="mt8">${parts.join(" ")}</div>
-     <div class="small mt8">借出時間：${fmtTime(new Date())}</div>`;
+    `<div class="receipt">
+       <div class="r-row"><span class="r-k">登記人</span><span class="strong">${esc(selected.name)} · <span class="mono">${esc(selected.studentId)}</span></span></div>
+       <div class="r-row"><span class="r-k">借用內容</span><span style="text-align:right">${parts.join(" ") || "—"}</span></div>
+       <div class="r-row"><span class="r-k">借出時間</span><span class="mono">${fmtTime(new Date())}</span></div>
+       <div class="r-row"><span class="r-k">單號</span><span class="r-ref">${esc(String(refId || "").slice(-6).toUpperCase())}</span></div>
+     </div>`;
   $("form").classList.add("hidden");
   $("done").classList.remove("hidden");
   window.scrollTo({ top: 0, behavior: "smooth" });
@@ -356,6 +392,9 @@ function bindEvents() {
   $("newEq").addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); $("addEqBtn").click(); }});
 
   $("submitBtn").addEventListener("click", submit);
+  $("confirmBack").addEventListener("click", () => $("confirmModal").classList.add("hidden"));
+  $("confirmGo").addEventListener("click", doSubmit);
+  $("confirmModal").addEventListener("click", (e) => { if (e.target.id === "confirmModal") $("confirmModal").classList.add("hidden"); });
   $("againBtn").addEventListener("click", () => location.reload());
 }
 
@@ -371,6 +410,7 @@ function updateSteps() {
   set(1, s1 ? "done" : "active");
   set(2, hasItem ? "done" : (s1 ? "active" : ""));
   set(3, hasItem ? "active" : "");
+  renderMyOut();
 }
 
 function startClock() {

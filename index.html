@@ -5,6 +5,8 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>教室鑰匙・設備借用</title>
   <link rel="icon" href="logo.svg" type="image/svg+xml" />
+  <link rel="icon" type="image/png" sizes="32x32" href="icon-32.png" />
+  <link rel="apple-touch-icon" href="icon-180.png" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@500;700&family=Noto+Sans+TC:wght@400;500;600;700&display=swap" rel="stylesheet" />
@@ -55,6 +57,8 @@
         </label>
       </section>
 
+      <div id="myOut" class="hidden mb16"></div>
+
       <section class="card">
         <h2 style="font-size:18px" class="mb16">請選擇借用項目</h2>
         <div class="chips">
@@ -100,10 +104,22 @@
           <svg viewBox="0 0 24 24" fill="none" stroke="var(--returned)" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>
         </div>
         <h2 style="font-size:22px;margin-top:8px">已送出借用登記</h2>
-        <div id="doneSummary" class="msg msg-ok mt16" style="text-align:left"></div>
-        <p class="small">請到系辦領取鑰匙 / 設備。歸還時由系辦人員於後台確認。</p>
+        <div id="doneSummary" class="mt16" style="text-align:left"></div>
+        <p class="small mt16">可截圖此借用單留存。請到系辦領取鑰匙 / 設備，歸還時由系辦人員於後台確認。</p>
         <button id="againBtn" class="btn btn-ghost mt16">再登記一筆</button>
       </section>
+    </div>
+  </div>
+
+  <!-- 送出前確認 -->
+  <div id="confirmModal" class="modal-bg hidden">
+    <div class="modal">
+      <h3 class="mb16">請確認借用內容</h3>
+      <div id="confirmBody"></div>
+      <div class="row mt16" style="gap:10px">
+        <button id="confirmBack" class="btn btn-ghost btn-block">返回修改</button>
+        <button id="confirmGo" class="btn btn-brass btn-block">確認送出</button>
+      </div>
     </div>
   </div>
 

@@ -3,7 +3,7 @@
 // ============================================================
 import {
   db, ready, collection, doc, getDoc, setDoc, updateDoc, deleteDoc, addDoc,
-  onSnapshot, query, orderBy, serverTimestamp,
+  onSnapshot, query, orderBy, serverTimestamp, writeBatch,
   loadCatalog, addCatalogItem, removeCatalogItem, setCatalogItems, normEquip,
   seedCatalogIfEmpty, fmtTime,
 } from "./db.js";
@@ -19,6 +19,10 @@ let recFilter = "out";
 let recSearch = "";
 let ovSearch = "";
 let dragFrom = null;   // 拖曳排序：來源索引
+let overdueDays = 3;   // 逾期天數門檻（功能 4）
+let histFrom = "", histTo = "", histStatus = "all", histSearch = "";
+let expandedGroup = null;  // 目前展開管理學生的群組 id（功能 5）
+let groupStuSearch = "";
 
 // ── 密碼閘門 ─────────────────────────────────────────────────
 const KEY = "cb_admin_ok";
@@ -55,8 +59,11 @@ async function enterApp() {
     bindCollapsibles();
     bindNewGroup();
     bindDetailModal();
+    subscribeSettings();
+    bindHistory();
+    setupIdleLogout();
     // 每分鐘重繪一次今日總表，讓跨過午夜時自動歸零
-    setInterval(() => { renderRecords(); }, 60 * 1000);
+    setInterval(() => { renderRecords(); renderOverview(); }, 60 * 1000);
   } catch (err) {
     alert("連線失敗：" + err.message);
   }
@@ -64,7 +71,7 @@ async function enterApp() {
 
 // ── 分頁切換 ─────────────────────────────────────────────────
 function setupTabs() {
-  const tabs = ["records", "overview", "groups", "catalog", "staff"];
+  const tabs = ["records", "overview", "history", "catalog", "groups", "staff"];
   document.querySelectorAll(".tab").forEach((t) => {
     t.addEventListener("click", () => {
       document.querySelectorAll(".tab").forEach((x) => x.classList.remove("on"));
@@ -121,24 +128,72 @@ function staffOptions() {
     staffNames.map((n) => `<option value="${esc(n)}">${esc(n)}</option>`).join("");
 }
 
-// 綁定所有「確認歸還」按鈕（今日表與總覽共用）
-function bindReturnButtons(scope) {
-  scope.querySelectorAll(".returnBtn").forEach((btn) => {
-    btn.addEventListener("click", async () => {
-      const id = btn.dataset.id;
-      const sel = scope.querySelector(`.staffSel[data-id="${id}"]`);
-      if (!sel.value) { sel.focus(); sel.style.borderColor = "var(--danger)"; return; }
-      btn.disabled = true; btn.textContent = "處理中…";
-      try {
-        await updateDoc(doc(db, "records", id), {
-          status: "returned", returnedBy: sel.value, returnedAt: serverTimestamp(),
-        });
-      } catch (err) {
-        alert("更新失敗：" + err.message);
-        btn.disabled = false; btn.textContent = "確認歸還";
-      }
-    });
+// 逾期判斷（功能 4）
+function daysNum(ts) {
+  if (!ts) return 0;
+  const d = ts.toDate ? ts.toDate() : new Date(ts);
+  return Math.floor((Date.now() - d.getTime()) / 86400000);
+}
+function isOverdue(r) { return r.status === "borrowed" && daysNum(r.borrowedAt) >= overdueDays; }
+
+async function returnRecord(id, who, note) {
+  await updateDoc(doc(db, "records", id), {
+    status: "returned", returnedBy: who, returnedAt: serverTimestamp(), returnNote: note || null,
   });
+}
+
+function staffSelHtml(id) {
+  return `<select class="staffSel" data-id="${id}" style="min-width:120px;padding:7px 10px">${staffOptions()}</select>`;
+}
+function delBtn(id) {
+  return `<button class="icon-btn delRecBtn" data-id="${id}" title="刪除此筆">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2m2 0v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/></svg>
+  </button>`;
+}
+// 借出中的歸還控制：工讀生下拉 + 備註(功能8) + 確認 + 一鍵全還(功能7) + 刪除(功能6)
+function returnControls(r, count) {
+  const allBtn = (count > 1)
+    ? `<button class="btn btn-ghost btn-sm returnAllBtn" data-sid="${esc(r.studentId)}" data-id="${r.id}">此人全部(${count})</button>` : "";
+  return `<div class="row" style="gap:6px;flex-wrap:wrap">
+    ${staffSelHtml(r.id)}
+    <input class="noteInput" data-id="${r.id}" placeholder="備註(選填)" style="width:118px;padding:7px 10px;border:1.5px solid var(--line);border-radius:6px" />
+    <button class="btn btn-return btn-sm returnBtn" data-id="${r.id}">確認歸還</button>
+    ${allBtn}${delBtn(r.id)}
+  </div>`;
+}
+
+function bindRowActions(scope) {
+  scope.querySelectorAll(".returnBtn").forEach((btn) => btn.addEventListener("click", async () => {
+    const id = btn.dataset.id;
+    const sel = scope.querySelector(`.staffSel[data-id="${id}"]`);
+    const note = scope.querySelector(`.noteInput[data-id="${id}"]`);
+    if (!sel.value) { sel.focus(); sel.style.borderColor = "var(--danger)"; return; }
+    btn.disabled = true; btn.textContent = "處理中…";
+    try { await returnRecord(id, sel.value, note ? note.value.trim() : ""); }
+    catch (err) { alert("更新失敗：" + err.message); btn.disabled = false; btn.textContent = "確認歸還"; }
+  }));
+  scope.querySelectorAll(".returnAllBtn").forEach((btn) => btn.addEventListener("click", async () => {
+    const sid = btn.dataset.sid, rowId = btn.dataset.id;
+    const sel = scope.querySelector(`.staffSel[data-id="${rowId}"]`);
+    const note = scope.querySelector(`.noteInput[data-id="${rowId}"]`);
+    if (!sel.value) { sel.focus(); sel.style.borderColor = "var(--danger)"; return; }
+    const mine = records.filter((r) => r.status === "borrowed" && String(r.studentId) === sid);
+    if (!confirm(`將 ${sid} 的 ${mine.length} 筆未歸還全部標記為已歸還？`)) return;
+    btn.disabled = true;
+    try {
+      const b = writeBatch(db);
+      mine.forEach((r) => b.update(doc(db, "records", r.id), {
+        status: "returned", returnedBy: sel.value, returnedAt: serverTimestamp(),
+        returnNote: (note ? note.value.trim() : "") || null,
+      }));
+      await b.commit();
+    } catch (err) { alert("更新失敗：" + err.message); btn.disabled = false; }
+  }));
+  scope.querySelectorAll(".delRecBtn").forEach((btn) => btn.addEventListener("click", async () => {
+    if (!confirm("確定刪除這筆借還紀錄？此動作無法復原。")) return;
+    try { await deleteDoc(doc(db, "records", btn.dataset.id)); }
+    catch (err) { alert("刪除失敗：" + err.message); }
+  }));
 }
 
 // ── 今日借還總表 ─────────────────────────────────────────────
@@ -149,6 +204,7 @@ function subscribeRecords() {
     snap.forEach((d) => records.push({ id: d.id, ...d.data() }));
     renderRecords();
     renderOverview();
+    renderHistory();
   });
 
   document.querySelectorAll('[data-filter]').forEach((chip) => {
@@ -179,13 +235,15 @@ function renderRecords() {
 
   $("recEmpty").classList.toggle("hidden", list.length !== 0);
 
+  // 計算每位學生的未歸還筆數（供「此人全部」按鈕）
+  const outCount = {};
+  records.forEach((r) => { if (r.status === "borrowed") outCount[r.studentId] = (outCount[r.studentId] || 0) + 1; });
+
   $("recBody").innerHTML = list.map((r) => {
     const confirmCell = r.status === "returned"
-      ? `<span class="badge badge-returned">已由 ${esc(r.returnedBy || "—")} 確認</span>`
-      : `<div class="row" style="gap:6px">
-           <select class="staffSel" data-id="${r.id}" style="min-width:130px;padding:7px 10px">${staffOptions()}</select>
-           <button class="btn btn-return btn-sm returnBtn" data-id="${r.id}">確認歸還</button>
-         </div>`;
+      ? `<span class="badge badge-returned">已由 ${esc(r.returnedBy || "—")} 確認</span>${r.returnNote ? `<div class="small">備註：${esc(r.returnNote)}</div>` : ""}
+         <div style="margin-top:6px">${delBtn(r.id)}</div>`
+      : returnControls(r, outCount[r.studentId] || 1);
     return `<tr class="${r.status === "returned" ? "returned" : ""}">
       <td class="num">${esc(r.studentId)}</td>
       <td>${esc(r.name)}<div class="small">${esc(r.className || r.groupName || "")}</div></td>
@@ -197,7 +255,7 @@ function renderRecords() {
     </tr>`;
   }).join("");
 
-  bindReturnButtons($("recBody"));
+  bindRowActions($("recBody"));
 }
 
 // ── 借用狀況總覽 ─────────────────────────────────────────────
@@ -219,12 +277,12 @@ function renderOverview() {
   $("ovKeysFree").textContent = Math.max(0, catalogKeys.length - keysOut);
 
   $("keyBoard").innerHTML = catalogKeys.length === 0
-    ? `<p class="small">清單是空的。</p>`
+    ? `<div class="empty-state"><div class="es-ico">📋</div><div class="es-t">清單是空的</div><div>用上方欄位新增項目。</div></div>`
     : catalogKeys.map((k) => {
         const r = holder[k];
-        return r
-          ? `<div class="cell busy clickable" data-kind="key" data-name="${esc(k)}"><span class="ck">${esc(k)}</span><span class="cs">借出中 ›</span></div>`
-          : `<div class="cell free" data-kind="key" data-name="${esc(k)}"><span class="ck">${esc(k)}</span><span class="cs">可借用</span></div>`;
+        if (!r) return `<div class="cell free" data-kind="key" data-name="${esc(k)}"><span class="ck">${esc(k)}</span><span class="cs">可借用</span></div>`;
+        const od = isOverdue(r);
+        return `<div class="cell busy clickable ${od ? "overdue" : ""}" data-kind="key" data-name="${esc(k)}"><span class="ck">${esc(k)}</span><span class="cs">${od ? "逾期 ›" : "借出中 ›"}</span></div>`;
       }).join("");
 
   // ── 設備狀態（方塊，可點）──
@@ -233,7 +291,7 @@ function renderOverview() {
   $("ovEqOut").textContent = Object.values(agg).reduce((s, n) => s + n, 0);
 
   $("eqBoard").innerHTML = catalogEquip.length === 0
-    ? `<p class="small">清單是空的。</p>`
+    ? `<div class="empty-state"><div class="es-ico">📋</div><div class="es-t">清單是空的</div><div>用上方欄位新增項目。</div></div>`
     : catalogEquip.map((e) => {
         const out = agg[e.name] || 0;
         const capTxt = (e.max != null) ? ` / ${e.max}` : "";
@@ -256,22 +314,22 @@ function renderOverview() {
   if (ovSearch) list = list.filter((r) =>
     String(r.studentId).toLowerCase().includes(ovSearch) || String(r.name).toLowerCase().includes(ovSearch));
 
+  const outCount = {};
+  outstanding.forEach((r) => { outCount[r.studentId] = (outCount[r.studentId] || 0) + 1; });
+
   $("ovEmpty").classList.toggle("hidden", list.length !== 0);
-  $("ovBody").innerHTML = list.map((r) => `
-    <tr>
+  $("ovBody").innerHTML = list.map((r) => {
+    const od = isOverdue(r);
+    return `<tr class="${od ? "overdue" : ""}">
       <td class="num">${esc(r.studentId)}</td>
       <td>${esc(r.name)}<div class="small">${esc(r.className || r.groupName || "")}</div></td>
       <td>${contentTags(r)}</td>
       <td class="num">${fmtTime(r.borrowedAt)}</td>
-      <td class="num">${daysSince(r.borrowedAt)}</td>
-      <td>
-        <div class="row" style="gap:6px">
-          <select class="staffSel" data-id="${r.id}" style="min-width:130px;padding:7px 10px">${staffOptions()}</select>
-          <button class="btn btn-return btn-sm returnBtn" data-id="${r.id}">確認歸還</button>
-        </div>
-      </td>
-    </tr>`).join("");
-  bindReturnButtons($("ovBody"));
+      <td class="num">${daysSince(r.borrowedAt)}${od ? ` <span class="badge badge-overdue">逾期</span>` : ""}</td>
+      <td>${returnControls(r, outCount[r.studentId] || 1)}</td>
+    </tr>`;
+  }).join("");
+  bindRowActions($("ovBody"));
 
   // 若明細彈窗開著，順便刷新內容
   if (openDetailRef) renderDetail();
@@ -336,14 +394,21 @@ function subscribeGroups() {
 function renderGroups() {
   const total = groups.reduce((s, g) => s + (g.students?.length || 0), 0);
   $("groupTotals").textContent = `共 ${groups.length} 個群組・${total} 人`;
-  $("groupList").innerHTML = groups.length === 0
-    ? `<p class="small">尚未匯入任何群組。請由上方匯入 Excel。</p>`
-    : groups.map((g) => `
-      <div class="list-item">
+  if (groups.length === 0) {
+    $("groupList").innerHTML = `<div class="empty-state"><div class="es-ico">📁</div><div class="es-t">尚無群組</div><div>從上方匯入 Excel，或按「＋ 建立群組」新增。</div></div>`;
+    return;
+  }
+  $("groupList").innerHTML = groups.map((g) => {
+    const open = expandedGroup === g.id;
+    return `<div class="list-item" style="flex-wrap:wrap">
         <div class="spread"><span class="name">${esc(g.name || "(未命名)")}</span><span class="meta">・${g.students?.length || 0} 人</span></div>
+        <button class="btn btn-ghost btn-sm mgrStu" data-id="${g.id}">${open ? "收合" : "管理學生"}</button>
         <button class="btn btn-ghost btn-sm renameGrp" data-id="${g.id}">改名</button>
         <button class="btn btn-danger-ghost btn-sm delGrp" data-id="${g.id}" data-name="${esc(g.name)}">刪除</button>
-      </div>`).join("");
+        ${open ? `<div style="flex-basis:100%;margin-top:10px">${studentPanel(g)}</div>` : ""}
+      </div>`;
+  }).join("");
+
   document.querySelectorAll(".renameGrp").forEach((b) => b.addEventListener("click", async () => {
     const g = groups.find((x) => x.id === b.dataset.id);
     const name = prompt("輸入新的群組名稱：", g.name || "");
@@ -352,6 +417,59 @@ function renderGroups() {
   document.querySelectorAll(".delGrp").forEach((b) => b.addEventListener("click", async () => {
     if (confirm(`確定刪除群組「${b.dataset.name}」及其所有學生資料？此動作無法復原。`))
       await deleteDoc(doc(db, "groups", b.dataset.id));
+  }));
+  document.querySelectorAll(".mgrStu").forEach((b) => b.addEventListener("click", () => {
+    expandedGroup = (expandedGroup === b.dataset.id) ? null : b.dataset.id;
+    groupStuSearch = "";
+    renderGroups();
+  }));
+  bindStudentPanel();
+}
+
+// 群組內學生管理面板（功能 5）：搜尋 + 編輯 + 刪除
+function studentPanel(g) {
+  const all = g.students || [];
+  const q = groupStuSearch.toLowerCase();
+  let list = q ? all.filter((s) => String(s.studentId).toLowerCase().includes(q) || String(s.name).toLowerCase().includes(q)) : all;
+  const capped = list.slice(0, 200);
+  const rows = capped.length === 0
+    ? `<p class="small">查無學生。</p>`
+    : capped.map((s) => `
+      <div class="stu-row" data-sid="${esc(s.studentId)}">
+        <span class="sid">${esc(s.studentId)}</span>
+        <span class="spread"><b>${esc(s.name)}</b> <span class="small">${esc(s.className || "")}　後3碼 ${esc(s.idLast3 || "—")}</span></span>
+        <button class="btn btn-ghost btn-sm editStu" data-gid="${g.id}" data-sid="${esc(s.studentId)}">編輯</button>
+        <button class="btn btn-danger-ghost btn-sm delStu" data-gid="${g.id}" data-sid="${esc(s.studentId)}">刪除</button>
+      </div>`).join("");
+  const more = list.length > 200 ? `<p class="small">僅顯示前 200 筆，請用搜尋縮小範圍（共 ${list.length} 筆）。</p>` : "";
+  return `<input class="stuSearch" type="search" placeholder="搜尋此群組學號 / 姓名" value="${esc(groupStuSearch)}" style="width:100%;margin-bottom:10px" />${rows}${more}`;
+}
+
+function bindStudentPanel() {
+  const search = document.querySelector(".stuSearch");
+  if (search) search.addEventListener("input", (e) => {
+    groupStuSearch = e.target.value;
+    // 只重繪面板，保留焦點
+    const g = groups.find((x) => x.id === expandedGroup);
+    const wrap = search.closest("div[style*='flex-basis']");
+    if (g && wrap) { wrap.innerHTML = studentPanel(g); bindStudentPanel(); const s2 = wrap.querySelector(".stuSearch"); if (s2) { s2.focus(); s2.setSelectionRange(s2.value.length, s2.value.length); } }
+  });
+  document.querySelectorAll(".delStu").forEach((b) => b.addEventListener("click", async () => {
+    const g = groups.find((x) => x.id === b.dataset.gid); if (!g) return;
+    if (!confirm(`確定從群組刪除學號 ${b.dataset.sid}？`)) return;
+    const next = (g.students || []).filter((s) => String(s.studentId) !== b.dataset.sid);
+    await updateDoc(doc(db, "groups", g.id), { students: next });
+  }));
+  document.querySelectorAll(".editStu").forEach((b) => b.addEventListener("click", async () => {
+    const g = groups.find((x) => x.id === b.dataset.gid); if (!g) return;
+    const s = (g.students || []).find((x) => String(x.studentId) === b.dataset.sid); if (!s) return;
+    const name = prompt("姓名：", s.name); if (name === null) return;
+    const id3 = prompt("身分證後3碼：", s.idLast3 || ""); if (id3 === null) return;
+    if (!/^\d{3}$/.test(id3.trim())) return alert("後3碼需為 3 位數字。");
+    const cls = prompt("班級（可空）：", s.className || ""); if (cls === null) return;
+    const next = (g.students || []).map((x) => String(x.studentId) === b.dataset.sid
+      ? { ...x, name: name.trim(), idLast3: id3.trim(), className: cls.trim() } : x);
+    await updateDoc(doc(db, "groups", g.id), { students: next });
   }));
 }
 function fillGroupSelect() {
@@ -520,7 +638,7 @@ function subscribeStaff() {
 }
 function renderStaff() {
   $("staffList").innerHTML = staffNames.length === 0
-    ? `<p class="small">尚未新增任何系辦人員。</p>`
+    ? `<div class="empty-state"><div class="es-ico">🧑‍💼</div><div class="es-t">尚無系辦人員</div><div>在下方新增姓名，供確認歸還時選擇。</div></div>`
     : staffNames.map((n) => `
       <div class="list-item"><span class="spread name">${esc(n)}</span>
         <button class="btn btn-danger-ghost btn-sm delStaff" data-name="${esc(n)}">刪除</button></div>`).join("");
@@ -538,6 +656,88 @@ function bindStaffAdd() {
   };
   $("addStaffBtn").addEventListener("click", add);
   $("addStaffInput").addEventListener("keydown", (e) => { if (e.key === "Enter") add(); });
+}
+
+// ── 設定：逾期門檻（功能 4）──────────────────────────────────
+function subscribeSettings() {
+  onSnapshot(doc(db, "settings", "app"), (d) => {
+    overdueDays = (d.exists() && d.data().overdueDays) ? d.data().overdueDays : 3;
+    const inp = $("ovdInput");
+    if (inp && document.activeElement !== inp) inp.value = overdueDays;
+    renderRecords(); renderOverview(); renderHistory();
+  });
+  $("ovdInput").addEventListener("change", async () => {
+    const v = Math.max(1, parseInt($("ovdInput").value) || 3);
+    await setDoc(doc(db, "settings", "app"), { overdueDays: v }, { merge: true });
+  });
+}
+
+// ── 歷史查詢（功能 1）────────────────────────────────────────
+function bindHistory() {
+  const upd = () => {
+    histFrom = $("histFrom").value; histTo = $("histTo").value;
+    histStatus = $("histStatus").value; histSearch = $("histSearch").value.trim().toLowerCase();
+    renderHistory();
+  };
+  ["histFrom", "histTo", "histStatus", "histSearch"].forEach((id) => $(id).addEventListener("input", upd));
+  $("histClear").addEventListener("click", () => {
+    $("histFrom").value = ""; $("histTo").value = ""; $("histStatus").value = "all"; $("histSearch").value = "";
+    histFrom = histTo = ""; histStatus = "all"; histSearch = ""; renderHistory();
+  });
+}
+
+function renderHistory() {
+  if (!$("histBody")) return;
+  let list = records.slice();
+  if (histStatus !== "all") list = list.filter((r) => r.status === histStatus);
+  if (histSearch) list = list.filter((r) =>
+    String(r.studentId).toLowerCase().includes(histSearch) || String(r.name).toLowerCase().includes(histSearch));
+  const from = histFrom ? new Date(histFrom + "T00:00:00") : null;
+  const to = histTo ? new Date(histTo + "T23:59:59") : null;
+  if (from || to) list = list.filter((r) => {
+    const d = r.borrowedAt && r.borrowedAt.toDate ? r.borrowedAt.toDate() : null;
+    if (!d) return false;
+    if (from && d < from) return false;
+    if (to && d > to) return false;
+    return true;
+  });
+
+  $("histCount").textContent = `共 ${list.length} 筆`;
+  $("histEmpty").classList.toggle("hidden", list.length !== 0);
+  $("histBody").innerHTML = list.map((r) => {
+    const status = r.status === "returned"
+      ? `<span class="badge badge-returned">已歸還</span>`
+      : (isOverdue(r) ? `<span class="badge badge-overdue">逾期未還</span>` : `<span class="badge badge-out">未歸還</span>`);
+    const retInfo = r.status === "returned"
+      ? `${esc(r.returnedBy || "—")}<div class="small">${fmtTime(r.returnedAt)}</div>${r.returnNote ? `<div class="small">備註：${esc(r.returnNote)}</div>` : ""}`
+      : "—";
+    return `<tr class="${r.status === "returned" ? "returned" : (isOverdue(r) ? "overdue" : "")}">
+      <td class="num">${esc(r.studentId)}</td>
+      <td>${esc(r.name)}<div class="small">${esc(r.className || r.groupName || "")}</div></td>
+      <td>${contentTags(r)}</td>
+      <td class="num">${fmtTime(r.borrowedAt)}</td>
+      <td>${status}</td>
+      <td>${retInfo}</td>
+      <td>${delBtn(r.id)}</td>
+    </tr>`;
+  }).join("");
+  bindRowActions($("histBody"));
+}
+
+// ── 閒置自動登出（功能 13）──────────────────────────────────
+function setupIdleLogout() {
+  const MIN = 30;
+  let timer;
+  const reset = () => {
+    clearTimeout(timer);
+    timer = setTimeout(() => {
+      sessionStorage.removeItem(KEY);
+      alert("因閒置過久已自動登出。");
+      location.reload();
+    }, MIN * 60 * 1000);
+  };
+  ["click", "keydown", "mousemove", "touchstart"].forEach((ev) => document.addEventListener(ev, reset, { passive: true }));
+  reset();
 }
 
 function esc(s) {
