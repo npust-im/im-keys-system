@@ -117,7 +117,7 @@ function contentTags(r) {
 }
 
 function staffOptions() {
-  return `<option value="">選擇工讀生…</option>` +
+  return `<option value="">選擇人員…</option>` +
     staffNames.map((n) => `<option value="${esc(n)}">${esc(n)}</option>`).join("");
 }
 
@@ -509,7 +509,7 @@ function bindCatalogAdds() {
   $("addEqInput").addEventListener("keydown", (e) => { if (e.key === "Enter") $("addEqBtn2").click(); });
 }
 
-// ── 工讀生名單 ───────────────────────────────────────────────
+// ── 系辦人員名單 ───────────────────────────────────────────────
 function subscribeStaff() {
   onSnapshot(doc(db, "staff", "list"), (d) => {
     staffNames = d.exists() ? d.data().names || [] : [];
@@ -520,12 +520,12 @@ function subscribeStaff() {
 }
 function renderStaff() {
   $("staffList").innerHTML = staffNames.length === 0
-    ? `<p class="small">尚未新增任何工讀生。</p>`
+    ? `<p class="small">尚未新增任何系辦人員。</p>`
     : staffNames.map((n) => `
       <div class="list-item"><span class="spread name">${esc(n)}</span>
         <button class="btn btn-danger-ghost btn-sm delStaff" data-name="${esc(n)}">刪除</button></div>`).join("");
   $("staffList").querySelectorAll(".delStaff").forEach((b) => b.addEventListener("click", async () => {
-    if (confirm(`確定刪除工讀生「${b.dataset.name}」？`))
+    if (confirm(`確定刪除系辦人員「${b.dataset.name}」？`))
       await setDoc(doc(db, "staff", "list"), { names: staffNames.filter((x) => x !== b.dataset.name) });
   }));
 }

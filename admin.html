@@ -4,6 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>後台管理 — 教室借還系統</title>
+  <link rel="icon" href="logo.svg" type="image/svg+xml" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@500;700&family=Noto+Sans+TC:wght@400;500;600;700&display=swap" rel="stylesheet" />
@@ -45,14 +46,14 @@
         <img src="logo.svg" alt="工業管理系" class="site-logo" style="width:60px;height:60px" />
         <div class="brandbar" style="width:110px"></div>
       </div>
-      <h3 style="text-align:center">系辦工讀生登入</h3>
+      <h3 style="text-align:center">系辦人員登入</h3>
       <div id="gateMsg"></div>
       <label class="field">
         <span class="lbl">後台密碼</span>
         <input id="gatePw" type="password" placeholder="輸入密碼" />
       </label>
       <button id="gateBtn" class="btn btn-block">進入後台</button>
-      <p class="small mt16"><a href="index.html">← 回到學生借用頁</a></p>
+      <p class="small mt16"><a href="index.html">← 回到首頁</a></p>
     </div>
   </div>
 
@@ -60,7 +61,7 @@
     <div class="topbar">
       <span class="brand"><img src="logo.svg" class="site-logo sm" alt="工管系" />教室借還・後台</span>
       <span class="spread"></span>
-      <a href="index.html">學生借用頁</a>
+      <a href="index.html">首頁</a>
       <a href="qr.html">QR code</a>
       <button class="linklike" id="logoutBtn">登出</button>
     </div>
@@ -71,7 +72,7 @@
         <button class="tab" data-tab="overview">借用狀況總覽</button>
         <button class="tab" data-tab="catalog">鑰匙・設備清單</button>
         <button class="tab" data-tab="groups">學生群組</button>
-        <button class="tab" data-tab="staff">工讀生名單</button>
+        <button class="tab" data-tab="staff">系辦人員名單</button>
       </div>
 
       <!-- ============ 今日借還總表 ============ -->
@@ -118,13 +119,13 @@
         <div class="card">
           <h2 style="font-size:18px" class="mb16">🔑 鑰匙狀態</h2>
           <div id="keyBoard" class="board"></div>
-          <p class="hint mt16">綠色＝可借用；金色＝借出中。點方塊可看借用人與借用時間。</p>
+          <p class="hint mt16">綠色＝可借用；藍色＝借出中。點方塊可看借用人與借用時間。</p>
         </div>
 
         <div class="card">
           <h2 style="font-size:18px" class="mb16">設備狀態</h2>
           <div id="eqBoard" class="board"></div>
-          <p class="hint mt16">綠色＝未借出；金色＝借出中（顯示借出數量／上限）。點方塊可看借用明細與剩餘數量。</p>
+          <p class="hint mt16">綠色＝未借出；藍色＝借出中（顯示借出數量／上限）。點方塊可看借用明細與剩餘數量。</p>
         </div>
 
         <div class="card">
@@ -197,7 +198,7 @@
               <input id="addKeyInput" type="text" placeholder="新增教室鑰匙名稱" />
               <button id="addKeyBtn2" class="btn btn-brass" style="white-space:nowrap">新增</button>
             </div>
-            <p class="hint mb16">可用滑鼠拖曳項目左側 <b>⠿</b> 調整順序，順序會同步套用到學生借用頁。</p>
+            <p class="hint mb16">可用滑鼠拖曳項目左側 <b>⠿</b> 調整順序，順序會同步套用到首頁。</p>
             <div id="keyList"></div>
           </div>
         </div>
@@ -218,10 +219,10 @@
         </div>
       </section>
 
-      <!-- ============ 工讀生名單 ============ -->
+      <!-- ============ 系辦人員名單 ============ -->
       <section id="tab-staff" class="hidden">
         <div class="card">
-          <h2 style="font-size:18px" class="mb16">工讀生 / 系辦人員名單</h2>
+          <h2 style="font-size:18px" class="mb16">系辦人員名單</h2>
           <p class="hint mb16">這些名字會出現在「確認歸還」下拉選單，供選擇是哪位人員確認歸還。</p>
           <div class="row mb16">
             <input id="addStaffInput" type="text" placeholder="輸入姓名" />
