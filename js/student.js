@@ -362,7 +362,6 @@ function showDone(eqArr, refId) {
        <div class="r-row"><span class="r-k">登記人</span><span class="strong">${esc(selected.name)} · <span class="mono">${esc(selected.studentId)}</span></span></div>
        <div class="r-row"><span class="r-k">借用內容</span><span style="text-align:right">${parts.join(" ") || "—"}</span></div>
        <div class="r-row"><span class="r-k">借出時間</span><span class="mono">${fmtTime(new Date())}</span></div>
-       <div class="r-row"><span class="r-k">單號</span><span class="r-ref">${esc(String(refId || "").slice(-6).toUpperCase())}</span></div>
      </div>`;
   $("form").classList.add("hidden");
   $("done").classList.remove("hidden");
